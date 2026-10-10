@@ -250,8 +250,9 @@ const VAR={D:"Langue naine",N:"Normale",F:"Plein art",B:"Sans bordure",W:"Showca
 const RAR={c:"Commune",u:"Inhabituelle",r:"Rare",m:"Mythique"};
 const COL={W:"Blanc",U:"Bleu",B:"Noir",R:"Rouge",G:"Vert",M:"Multicolore",C:"Incolore",L:"Terrain"};
 const SNAP_DATE="11.10.2026";
+const API_FR="https://api.scryfall.com/cards/search?q=(e%3Ahob+or+e%3Ahoc)+lang%3Afr&unique=prints&order=set&include_extras=true&include_variations=true";
 const API="https://api.scryfall.com/cards/search?q=(e%3Ahob+or+e%3Ahoc)&unique=prints&order=set&include_extras=true&include_variations=true";
-const LS="hobbitdex.v1", LSC="hobbitdex.cards.v1", LSU="hobbitdex.ui";
+const LS="hobbitdex.v1", LSC="hobbitdex.cards.v2", LSU="hobbitdex.ui";
 
 function lsGet(k){try{return localStorage.getItem(k)}catch(e){return null}}
 function lsSet(k,v){try{localStorage.setItem(k,v);return true}catch(e){return false}}
@@ -270,17 +271,27 @@ function fromScryfall(c){const f0=c.card_faces?c.card_faces[0]:c;const iu=c.imag
   const fin=(c.finishes.includes("nonfoil")?"n":"")+(c.finishes.includes("foil")?"f":"");
   return {k:c.set+"-"+c.collector_number,set:c.set,cn:c.collector_number,num:parseInt(c.collector_number,10),r:c.rarity[0],v:vcode(c),fin:fin||"n",
     eur:n(p.eur),eurf:n(p.eur_foil),usd:n(p.usd),usdf:n(p.usd_foil),name:c.name,mana:c.mana_cost||f0.mana_cost||"",type:c.type_line,colors,cat:catOf(colors,c.type_line),
-    pt:f0.power!=null?f0.power+"/"+f0.toughness:"",text,img:iu.normal||"",imgS:iu.small||"",artist:c.artist||""}}
+    pt:f0.power!=null?f0.power+"/"+f0.toughness:"",text,img:iu.normal||"",imgS:iu.small||"",artist:c.artist||"",oid:c.oracle_id||""}}
+function frInfo(f,en){const fa=f.card_faces;let name=f.printed_name||(fa&&fa[0].printed_name)||"";let type=f.printed_type_line||(fa&&fa[0].printed_type_line)||"";
+  let text=f.printed_text;if(text==null&&fa){const p0=fa[0].printed_text||"";const rest=(en.text||"").split("\n\n").slice(1);text=[p0,...rest].join("\n\n")}
+  if(fa&&!fa[1].printed_name&&en.name.includes(" // "))name=name.split(" // ")[0];
+  const iu=f.image_uris||(fa&&fa[0].image_uris)||{};return {name,type,text:text||"",img:iu.normal||"",imgS:iu.small||""}}
 
 let CARDS=[],BYK={},dataSrc="snapshot",dataAt=0;
 function setCards(list,src,at){CARDS=list.filter(c=>c.set==="hob"||c.set==="hoc");BYK=Object.fromEntries(CARDS.map(c=>[c.k,c]));dataSrc=src;dataAt=at||0;}
 (function boot(){try{const raw=lsGet(LSC);if(raw){const d=JSON.parse(raw);if(d&&Array.isArray(d.cards)&&d.cards.length>400){setCards(d.cards,"cache",d.at);return}}}catch(e){}
   setCards(fromSnapshot(),"snapshot",0)})();
 
-async function fetchLive(){const all=[];let url=API;
+async function fetchPages(url){const all=[];
   while(url){const r=await fetch(url,{headers:{Accept:"application/json"}});if(!r.ok)throw new Error("HTTP "+r.status);const j=await r.json();
     all.push(...j.data);url=j.has_more?j.next_page:null;if(url)await new Promise(s=>setTimeout(s,120));}
-  return all.filter(c=>c.lang==="en"||c.lang==="dw").map(fromScryfall);}
+  return all}
+async function fetchLive(){const list=(await fetchPages(API)).filter(c=>c.lang==="en"||c.lang==="dw").map(fromScryfall);
+  let fr=[];try{await new Promise(s=>setTimeout(s,150));fr=await fetchPages(API_FR)}catch(e){}
+  const byK={},byO={};fr.forEach(f=>{byK[f.set+"-"+f.collector_number]=f;if(f.oracle_id&&!byO[f.oracle_id])byO[f.oracle_id]=f});
+  list.forEach(c=>{if(c.v==="D")return;const own=byK[c.k],f=own||byO[c.oid];if(!f)return;const i=frInfo(f,c);
+    if(i.name)c.nameFr=i.name;if(i.type)c.typeFr=i.type;if(i.text)c.textFr=i.text;if(own&&i.imgS){c.imgFr=i.img;c.imgSFr=i.imgS}c.frPrint=!!own});
+  return list}
 async function refreshData(force){
   if(!force&&dataSrc==="cache"&&Date.now()-dataAt<20*3600e3)return;
   setSyncText("Mise à jour depuis Scryfall…",false);
@@ -296,14 +307,17 @@ function clean(obj){const out={};if(!obj||typeof obj!=="object")return out;
     if(n||f||t||w)out[k]={n,f,t:Math.min(t,n+f),w};}
   return out;}
 try{coll=clean(JSON.parse(lsGet(LS)||"{}"))}catch(e){}
-const ui={set:"hob",q:"",rar:"",col:"",v:"",sort:"num",status:"all",cur:"eur",view:"dex",big:false};
-try{const u=JSON.parse(lsGet(LSU)||"{}");for(const k of ["set","sort","status","cur","big"])if(u[k]!==undefined)ui[k]=u[k]}catch(e){}
-function saveUI(){lsSet(LSU,JSON.stringify({set:ui.set,sort:ui.sort,status:ui.status,cur:ui.cur,big:ui.big}))}
+const ui={set:"hob",q:"",rar:"",col:"",v:"",sort:"num",status:"all",cur:"eur",view:"dex",big:false,lang:"fr"};
+try{const u=JSON.parse(lsGet(LSU)||"{}");for(const k of ["set","sort","status","cur","big","lang"])if(u[k]!==undefined)ui[k]=u[k]}catch(e){}
+function saveUI(){lsSet(LSU,JSON.stringify({set:ui.set,sort:ui.sort,status:ui.status,cur:ui.cur,big:ui.big,lang:ui.lang}))}
 const E=k=>coll[k]||{n:0,f:0,t:0,w:false};
 const qty=k=>{const e=coll[k];return e?e.n+e.f:0};
 function persist(){if(!lsSet(LS,JSON.stringify(coll)))toast("Impossible d'enregistrer : le navigateur bloque le stockage.");}
 
 /* ---------- helpers ---------- */
+const FR=c=>ui.lang==="fr";
+const N=c=>FR(c)&&c.nameFr?c.nameFr:c.name, T=c=>FR(c)&&c.typeFr?c.typeFr:c.type, X=c=>FR(c)&&c.textFr?c.textFr:(c.text||"");
+const IS=c=>FR(c)&&c.imgSFr?c.imgSFr:c.imgS, IM=c=>FR(c)&&c.imgFr?c.imgFr:c.img;
 const esc=s=>String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
 const pN=c=>ui.cur==="eur"?c.eur:c.usd, pF=c=>ui.cur==="eur"?c.eurf:c.usdf;
 const best=c=>c.fin==="f"?pF(c):(pN(c)||pF(c));
@@ -329,7 +343,7 @@ function updateSync(){const d=dataAt?new Date(dataAt).toLocaleString("fr-CH",{da
 function renderSets(){const n=s=>CARDS.filter(c=>s==="all"||c.set===s).length;
   document.getElementById("sets").innerHTML=[["hob","The Hobbit"],["hoc","Commander (HOC)"],["all","Tout"]].map(([s,l])=>
     '<button class="chip" data-set="'+s+'" aria-pressed="'+(ui.set===s)+'">'+l+' <small>'+n(s)+'</small></button>').join("")+
-    '<button class="chip" id="cur" aria-label="Changer la devise" style="margin-left:auto">'+(ui.cur==="eur"?"€ EUR":"$ USD")+'</button>'}
+    '<button class="chip" id="lang" aria-label="Changer la langue des cartes" style="margin-left:auto">'+(ui.lang==="fr"?"🇫🇷 Français":"🇬🇧 English")+'</button><button class="chip" id="cur" aria-label="Changer la devise">'+(ui.cur==="eur"?"€ EUR":"$ USD")+'</button>'}
 const RCOL={c:"#6b7069",u:"#8d9ba6",r:"#c39a2c",m:"#d4602f"};
 function renderProgress(){const list=CARDS.filter(inSet),own=list.filter(c=>qty(c.k)>0),pct=list.length?own.length/list.length*100:0;let val=0;list.forEach(c=>val+=valueOf(c.k));
   const seg=["c","u","r","m"].map(r=>({r,n:own.filter(c=>c.r===r).length}));
@@ -344,16 +358,16 @@ function renderStatus(){const opts=[["all","Toutes"],["own","Possédées"],["mis
     '<button class="dens" id="dens" aria-pressed="'+ui.big+'">'+(ui.big?"Grandes cartes":"Petites cartes")+'</button>'}
 function filtered(){const q=ui.q.trim().toLowerCase();
   let l=CARDS.filter(c=>inSet(c)&&(!ui.rar||c.r===ui.rar)&&(!ui.col||c.cat===ui.col)&&(!ui.v||c.v===ui.v));
-  if(q)l=l.filter(c=>c.name.toLowerCase().includes(q)||c.type.toLowerCase().includes(q)||c.cn===q.replace(/^#/,"")||c.k===q||c.text.toLowerCase().includes(q));
+  if(q)l=l.filter(c=>[c.name,c.nameFr,c.type,c.typeFr,c.text,c.textFr].some(x=>x&&x.toLowerCase().includes(q))||c.cn===q.replace(/^#/,"")||c.k===q);
   const st=ui.status;l=l.filter(c=>{const e=E(c.k),n=e.n+e.f;return st==="all"||(st==="own"&&n>0)||(st==="miss"&&n===0)||(st==="dup"&&n>1)||(st==="wish"&&e.w)||(st==="trade"&&e.t>0)});
-  const s=ui.sort;l.sort((a,b)=>s==="price"?best(b)-best(a):s==="name"?a.name.localeCompare(b.name):s==="owned"?(qty(b.k)>0)-(qty(a.k)>0)||a.set.localeCompare(b.set)||a.num-b.num:a.set.localeCompare(b.set)||a.num-b.num);
+  const s=ui.sort;l.sort((a,b)=>s==="price"?best(b)-best(a):s==="name"?N(a).localeCompare(N(b),"fr"):s==="owned"?(qty(b.k)>0)-(qty(a.k)>0)||a.set.localeCompare(b.set)||a.num-b.num:a.set.localeCompare(b.set)||a.num-b.num);
   return l}
 function tileHTML(c){const e=E(c.k),n=e.n+e.f;
-  const img=c.imgS?'<img loading="lazy" decoding="async" src="'+esc(ui.big?c.img:c.imgS)+'" srcset="'+esc(c.imgS)+' 146w, '+esc(c.img)+' 488w" sizes="'+(ui.big?"240px":"170px")+'" alt="'+esc(c.name)+'">':'<div class="ph">'+esc(short(c.name))+'</div>';
-  return '<div class="card'+(n?"":" missing")+((c.v==="S"||c.v==="G"||e.f)?" foil":"")+'" role="button" tabindex="0" data-k="'+c.k+'" aria-label="'+esc(c.name)+', n° '+c.cn+(n?", "+n+" possédée(s)":", manquante")+'">'+
+  const img=IS(c)?'<img loading="lazy" decoding="async" src="'+esc(ui.big?IM(c):IS(c))+'" srcset="'+esc(IS(c))+' 146w, '+esc(IM(c))+' 488w" sizes="'+(ui.big?"240px":"170px")+'" alt="'+esc(N(c))+'">':'<div class="ph">'+esc(short(N(c)))+'</div>';
+  return '<div class="card'+(n?"":" missing")+((c.v==="S"||c.v==="G"||e.f)?" foil":"")+'" role="button" tabindex="0" data-k="'+c.k+'" aria-label="'+esc(N(c))+', n° '+c.cn+(n?", "+n+" possédée(s)":", manquante")+'">'+
     '<div class="img" style="--band:'+bandOf(c)+'">'+img+'</div>'+
     (n?'<span class="owned-badge">×'+n+'</span>':"")+((e.w||e.t)?'<span class="flags">'+(e.w?'<span class="w">cherche</span>':"")+(e.t?'<span class="t">éch. '+e.t+'</span>':"")+'</span>':"")+
-    '<button class="quick" data-quick="'+c.k+'" aria-label="Ajouter un exemplaire de '+esc(c.name)+'">+</button>'+
+    '<button class="quick" data-quick="'+c.k+'" aria-label="Ajouter un exemplaire de '+esc(N(c))+'">+</button>'+
     '<div class="cap"><span class="no"><span class="gem '+c.r+'" title="'+RAR[c.r]+'"></span>'+(ui.set==="all"?c.set.toUpperCase()+" ":"")+c.cn.padStart(3,"0")+'</span>'+(c.v!=="N"?'<span class="nm" style="font-weight:500;color:var(--muted)">'+VAR[c.v]+'</span>':'<span class="nm"></span>')+'<span class="pr">'+money(best(c))+'</span></div></div>'}
 function renderGrid(){const l=filtered(),g=document.getElementById("grid");g.classList.toggle("big",ui.big);
   document.getElementById("count").textContent=l.length+" carte"+(l.length>1?"s":"")+" affichée"+(l.length>1?"s":"");
@@ -366,10 +380,10 @@ function closeSheet(){openK=null;document.getElementById("sheet-root").innerHTML
 function renderSheet(){if(!openK)return;const c=BYK[openK];if(!c){closeSheet();return}const e=E(openK),n=e.n+e.f;
   const stepper=(fld,label,sub)=>'<div class="row"><div class="lbl"><b>'+label+'</b><small>'+sub+'</small></div><div class="step"><button data-step="'+fld+'" data-d="-1" aria-label="Retirer '+label+'">−</button><output>'+e[fld]+'</output><button data-step="'+fld+'" data-d="1" aria-label="Ajouter '+label+'">+</button></div></div>';
   const prev=document.querySelector(".sheet");const keep=prev?prev.scrollTop:0;
-  document.getElementById("sheet-root").innerHTML='<div class="scrim" data-close="1"><div class="sheet" role="dialog" aria-modal="true" aria-label="'+esc(c.name)+'"><button class="x" data-close="1" aria-label="Fermer">×</button>'+
-   '<div class="lay"><div class="big-img'+((c.v==="S"||c.v==="G")?" foil":"")+'" style="--band:'+bandOf(c)+'">'+(c.img?'<img src="'+esc(c.img)+'" alt="'+esc(c.name)+'">':"")+'</div><div style="min-width:0">'+
-   '<div class="meta num">'+c.set.toUpperCase()+' · n° '+c.cn+' · '+RAR[c.r]+(c.artist?' · '+esc(c.artist):'')+'</div><h2>'+esc(c.name)+'</h2>'+
-   '<div class="meta">'+manaHTML(c.mana)+' '+esc(c.type)+(c.pt?' · '+c.pt:'')+'</div>'+(c.text?'<div class="oracle">'+esc(c.text)+'</div>':"")+
+  document.getElementById("sheet-root").innerHTML='<div class="scrim" data-close="1"><div class="sheet" role="dialog" aria-modal="true" aria-label="'+esc(N(c))+'"><button class="x" data-close="1" aria-label="Fermer">×</button>'+
+   '<div class="lay"><div class="big-img'+((c.v==="S"||c.v==="G")?" foil":"")+'" style="--band:'+bandOf(c)+'">'+(IM(c)?'<img src="'+esc(IM(c))+'" alt="'+esc(N(c))+'">':"")+'</div><div style="min-width:0">'+
+   '<div class="meta num">'+c.set.toUpperCase()+' · n° '+c.cn+' · '+RAR[c.r]+(c.artist?' · '+esc(c.artist):'')+'</div><h2>'+esc(N(c))+'</h2>'+(ui.lang==="fr"&&c.nameFr&&c.nameFr!==c.name?'<div class="meta">'+esc(c.name)+'</div>':"")+(ui.lang==="fr"&&dataSrc!=="snapshot"&&c.v!=="D"&&!c.frPrint?'<div class="meta" style="color:var(--warn)">Cette version n\'existe qu\'en anglais</div>':"")+
+   '<div class="meta">'+manaHTML(c.mana)+' '+esc(T(c))+(c.pt?' · '+c.pt:'')+'</div>'+(X(c)?'<div class="oracle">'+esc(X(c))+'</div>':"")+
    '<div class="facts"><div><small>Version</small><b style="font-family:var(--f-body);font-weight:700">'+VAR[c.v]+'</b></div><div><small>Prix normale</small><b>'+money(pN(c))+'</b></div><div><small>Prix foil</small><b>'+money(pF(c))+'</b></div></div>'+
    '<div style="margin-top:8px">'+(c.fin.includes("n")?stepper("n","Normale","Exemplaires non-foil"):"")+(c.fin.includes("f")?stepper("f","Foil",c.fin==="f"?"Cette version existe seulement en foil":"Exemplaires brillants"):"")+
    '<div class="row"><div class="lbl"><b>À échanger</b><small>'+(n?"Jusqu'à "+n+" exemplaire"+(n>1?"s":""):"Ajoute d'abord un exemplaire")+'</small></div><div class="step"><button data-step="t" data-d="-1" aria-label="Moins à échanger">−</button><output>'+e.t+'</output><button data-step="t" data-d="1" aria-label="Plus à échanger">+</button></div></div>'+
@@ -392,10 +406,10 @@ function renderStats(){const host=document.getElementById("view-stats");let tot=
   host.innerHTML='<h2 class="sec">Statistiques</h2><div class="kpis"><div class="kpi"><small>Valeur totale</small><b>'+money(tot)+'</b></div><div class="kpi"><small>Cartes différentes</small><b>'+distinct+' / '+CARDS.length+'</b></div><div class="kpi"><small>Exemplaires</small><b>'+copies+'</b></div><div class="kpi"><small>Dont foil</small><b>'+foils+'</b></div></div>'+
     '<div class="panels">'+setBlock("hob")+setBlock("hoc")+'<div class="panel"><h3>Set principal (versions normales) par couleur</h3>'+colOwn.map(([l,o,t,k])=>bar([l,o,t],"var(--m-"+k+")")).join("")+'</div>'+
     '<div class="panel"><h3>Tes 10 cartes les plus chères</h3>'+(top.length?'<ul class="list">'+top.map(([c,v])=>liHTML(c,money(v))).join("")+'</ul>':'<p class="note">Ajoute des cartes dans le classeur pour voir lesquelles valent le plus.</p>')+'</div></div>'}
-function liHTML(c,right){return '<li><button data-open="'+c.k+'">'+(c.imgS?'<img src="'+esc(c.imgS)+'" alt="" loading="lazy">':"")+'<span>'+esc(short(c.name))+' <span class="n">· '+c.set.toUpperCase()+' '+c.cn+(c.v!=="N"?" · "+VAR[c.v]:"")+'</span></span></button><span class="n">'+right+'</span></li>'}
+function liHTML(c,right){return '<li><button data-open="'+c.k+'">'+(IS(c)?'<img src="'+esc(IS(c))+'" alt="" loading="lazy">':"")+'<span>'+esc(short(N(c)))+' <span class="n">· '+c.set.toUpperCase()+' '+c.cn+(c.v!=="N"?" · "+VAR[c.v]:"")+'</span></span></button><span class="n">'+right+'</span></li>'}
 
 /* ---------- Échanges ---------- */
-function lineOf(c,extra){return "#"+c.set.toUpperCase()+" "+c.cn+" "+short(c.name)+(c.v!=="N"?" ("+VAR[c.v]+")":"")+(extra?" "+extra:"")}
+function lineOf(c,extra){return "#"+c.set.toUpperCase()+" "+c.cn+" "+short(N(c))+(c.v!=="N"?" ("+VAR[c.v]+")":"")+(extra?" "+extra:"")}
 function renderTrade(){const host=document.getElementById("view-trade");
   const trade=CARDS.filter(c=>E(c.k).t>0),dups=CARDS.filter(c=>qty(c.k)>1&&!E(c.k).t),wish=CARDS.filter(c=>E(c.k).w);
   const wishCost=wish.reduce((s,c)=>s+(qty(c.k)?0:best(c)),0);
@@ -414,10 +428,11 @@ function renderAll(){if(ui.view==="dex"){renderSets();renderProgress();renderSta
 document.addEventListener("click",ev=>{const t=ev.target;
   const tab=t.closest("nav.tabs button");if(tab){ui.view=tab.dataset.view;showView();return}
   const ch=t.closest("[data-set]");if(ch){ui.set=ch.dataset.set;saveUI();renderVarSelect();renderAll();return}
+  if(t.closest("#lang")){ui.lang=ui.lang==="fr"?"en":"fr";saveUI();renderAll();return}
   if(t.closest("#cur")){ui.cur=ui.cur==="eur"?"usd":"eur";saveUI();renderAll();return}
   if(t.closest("#dens")){ui.big=!ui.big;saveUI();renderAll();return}
   const st=t.closest("[data-st]");if(st){ui.status=st.dataset.st;saveUI();renderAll();return}
-  const q=t.closest("[data-quick]");if(q){const c=BYK[q.dataset.quick];mutate(c.k,e=>{c.fin.includes("n")?e.n++:e.f++});toast(short(c.name)+" · ×"+qty(c.k));return}
+  const q=t.closest("[data-quick]");if(q){const c=BYK[q.dataset.quick];mutate(c.k,e=>{c.fin.includes("n")?e.n++:e.f++});toast(short(N(c))+" · ×"+qty(c.k));return}
   const step=t.closest("[data-step]");if(step&&openK){const f=step.dataset.step,d=+step.dataset.d;mutate(openK,e=>{e[f]+=d});return}
   if(t.closest("[data-wish]")&&openK){mutate(openK,e=>{e.w=!e.w});return}
   if(t.dataset&&t.dataset.close){closeSheet();return}
@@ -451,7 +466,7 @@ document.getElementById("reset").addEventListener("click",()=>{const box=documen
   document.getElementById("rs-no").onclick=()=>box.innerHTML=""});
 document.getElementById("offline").addEventListener("click",async ev=>{const b=ev.currentTarget,info=document.getElementById("offline-info");
   if(!("serviceWorker" in navigator)||!navigator.serviceWorker.controller){info.textContent="Le mode hors connexion marche seulement quand le site est en ligne (https), pas en ouvrant le fichier directement.";return}
-  const urls=CARDS.map(c=>c.imgS).filter(Boolean);if(!urls.length){info.textContent="Les images ne sont pas encore chargées. Mets d'abord à jour les cartes.";return}
+  const urls=CARDS.map(c=>IS(c)).filter(Boolean);if(!urls.length){info.textContent="Les images ne sont pas encore chargées. Mets d'abord à jour les cartes.";return}
   b.disabled=true;let done=0;const q=urls.slice();
   async function worker(){while(q.length){const u=q.shift();try{await fetch(u,{mode:"no-cors"})}catch(e){}done++;info.textContent=done+" / "+urls.length+" images"}}
   await Promise.all([worker(),worker(),worker(),worker()]);info.textContent="Terminé : "+urls.length+" images disponibles hors connexion.";b.disabled=false});
