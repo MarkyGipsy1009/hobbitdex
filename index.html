@@ -101,8 +101,13 @@ main{max-width:1180px;margin:0 auto;padding-inline:16px;padding-block:18px calc(
 .flags{position:absolute;left:6px;top:6px;z-index:2;display:flex;gap:4px;flex-wrap:wrap}
 .flags span{font-size:11px;font-weight:700;border-radius:999px;padding:1px 7px;border:2px solid #fff;color:#fff}
 .flags .w{background:var(--wish)}.flags .t{background:var(--accent)}
-.quick{position:absolute;right:6px;bottom:30px;z-index:2;width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:var(--surface);font-size:20px;line-height:1;display:grid;place-items:center;box-shadow:0 2px 6px rgb(0 0 0 / .2)}
-.quick:hover{background:var(--accent-soft);border-color:var(--accent)}
+.qbar{position:absolute;right:6px;bottom:30px;z-index:2;display:flex;flex-direction:column;gap:6px}
+.quick{width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-size:18px;line-height:1;display:grid;place-items:center;box-shadow:0 2px 6px rgb(0 0 0 / .2);padding:0}
+.quick.f{background:linear-gradient(135deg,#ffe7f6,#e2f6ff 50%,#fff6cf);color:#3b2a00}
+.quick.t{font-size:16px}
+@media (max-width:420px){.qbar{gap:4px}.quick{width:31px;height:31px;font-size:16px}}
+.quick:hover{border-color:var(--accent);filter:brightness(1.05)}
+.quick:active{transform:scale(.92)}
 .gem{width:9px;height:9px;transform:rotate(45deg);border-radius:2px;display:inline-block;margin-right:4px;border:1px solid rgb(0 0 0 / .3)}
 .gem.c{background:#2a2a2a}.gem.u{background:linear-gradient(135deg,#d9e1e8,#7d8b96)}.gem.r{background:linear-gradient(135deg,#f4dc8a,#a67c1a)}.gem.m{background:linear-gradient(135deg,#f6a35c,#c0391b)}
 
@@ -367,7 +372,9 @@ function tileHTML(c){const e=E(c.k),n=e.n+e.f;
   return '<div class="card'+(n?"":" missing")+((c.v==="S"||c.v==="G"||e.f)?" foil":"")+'" role="button" tabindex="0" data-k="'+c.k+'" aria-label="'+esc(N(c))+', n° '+c.cn+(n?", "+n+" possédée(s)":", manquante")+'">'+
     '<div class="img" style="--band:'+bandOf(c)+'">'+img+'</div>'+
     (n?'<span class="owned-badge">×'+n+'</span>':"")+((e.w||e.t)?'<span class="flags">'+(e.w?'<span class="w">cherche</span>':"")+(e.t?'<span class="t">éch. '+e.t+'</span>':"")+'</span>':"")+
-    '<button class="quick" data-quick="'+c.k+'" aria-label="Ajouter un exemplaire de '+esc(N(c))+'">+</button>'+
+    '<div class="qbar">'+(c.fin.includes("n")?'<button class="quick" data-quick="'+c.k+'" data-m="n" title="Ajouter une normale" aria-label="Ajouter une normale de '+esc(N(c))+'">+</button>':"")+
+      (c.fin.includes("f")?'<button class="quick f" data-quick="'+c.k+'" data-m="f" title="Ajouter une foil" aria-label="Ajouter une foil de '+esc(N(c))+'">✦</button>':"")+
+      '<button class="quick t" data-quick="'+c.k+'" data-m="t" title="Mettre une à échanger" aria-label="Mettre un exemplaire de '+esc(N(c))+' à échanger">⇄</button></div>'+
     '<div class="cap"><span class="no"><span class="gem '+c.r+'" title="'+RAR[c.r]+'"></span>'+(ui.set==="all"?c.set.toUpperCase()+" ":"")+c.cn.padStart(3,"0")+'</span>'+(c.v!=="N"?'<span class="nm" style="font-weight:500;color:var(--muted)">'+VAR[c.v]+'</span>':'<span class="nm"></span>')+'<span class="pr">'+money(best(c))+'</span></div></div>'}
 function renderGrid(){const l=filtered(),g=document.getElementById("grid");g.classList.toggle("big",ui.big);
   document.getElementById("count").textContent=l.length+" carte"+(l.length>1?"s":"")+" affichée"+(l.length>1?"s":"");
@@ -432,7 +439,10 @@ document.addEventListener("click",ev=>{const t=ev.target;
   if(t.closest("#cur")){ui.cur=ui.cur==="eur"?"usd":"eur";saveUI();renderAll();return}
   if(t.closest("#dens")){ui.big=!ui.big;saveUI();renderAll();return}
   const st=t.closest("[data-st]");if(st){ui.status=st.dataset.st;saveUI();renderAll();return}
-  const q=t.closest("[data-quick]");if(q){const c=BYK[q.dataset.quick];mutate(c.k,e=>{c.fin.includes("n")?e.n++:e.f++});toast(short(N(c))+" · ×"+qty(c.k));return}
+  const q=t.closest("[data-quick]");if(q){const c=BYK[q.dataset.quick],m=q.dataset.m,e0=E(c.k),nm=short(N(c));
+    if(m==="t"){if(!(e0.n+e0.f)){toast("Ajoute d'abord un exemplaire de "+nm);return}if(e0.t>=e0.n+e0.f){toast("Tous tes "+nm+" sont déjà à échanger");return}
+      mutate(c.k,e=>{e.t++});toast(nm+" · "+E(c.k).t+" à échanger");return}
+    mutate(c.k,e=>{e[m]++});const e1=E(c.k);toast(nm+" · "+(m==="f"?"foil ×"+e1.f:"normale ×"+e1.n));return}
   const step=t.closest("[data-step]");if(step&&openK){const f=step.dataset.step,d=+step.dataset.d;mutate(openK,e=>{e[f]+=d});return}
   if(t.closest("[data-wish]")&&openK){mutate(openK,e=>{e.w=!e.w});return}
   if(t.dataset&&t.dataset.close){closeSheet();return}
