@@ -172,6 +172,16 @@ textarea{width:100%;min-height:120px;border:1px solid var(--line);background:var
 .note{font-size:13px;color:var(--muted)}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:500;z-index:60;max-width:calc(100% - 32px)}
 .confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:14px}
+.acct{position:absolute;right:0;top:4px;border:1px solid rgb(255 255 255 / .35);background:rgb(255 255 255 / .08);color:var(--deep-ink);border-radius:999px;padding:6px 14px;font-weight:500;font-size:14px;max-width:46%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acct.on{background:rgb(111 208 143 / .2);border-color:rgb(111 208 143 / .6)}
+@media (max-width:520px){.acct{position:static;margin-top:10px;max-width:100%}}
+.form{display:grid;gap:10px}
+.form label{display:grid;gap:4px;font-size:14px;font-weight:500}
+.form input,.form select{border:1px solid var(--line);background:var(--raised);border-radius:10px;padding:9px 11px;min-width:0;width:100%}
+.form.row2{grid-template-columns:minmax(0,1fr) auto;align-items:end;margin-bottom:10px}
+.linkbtn{background:none;border:0;padding:0;color:var(--accent);font-weight:700;text-decoration:underline;font-size:inherit}
+.viewbar{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:var(--accent-soft);border:1px solid var(--accent);border-radius:12px;padding:10px 14px;margin-bottom:14px}
+body.viewing .qbar{display:none}
 footer{max-width:1180px;margin:0 auto;padding:0 16px 30px;font-size:12px;color:var(--muted)}
 footer a{color:inherit}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -180,6 +190,7 @@ footer a{color:inherit}
 <body>
 <header class="top">
   <div class="wrap">
+    <button class="acct" id="acct" hidden>Se connecter</button>
     <div class="brand"><h1>HobbitDex</h1><span class="runes">ᚦ ᛒ ᚨ ᛗ</span></div>
     <p class="sub">Collection Magic: The Gathering · The Hobbit (HOB) et cartes Commander (HOC)</p>
     <div class="sync" id="sync"><i></i><span>Chargement des cartes…</span></div>
@@ -187,6 +198,7 @@ footer a{color:inherit}
       <button role="tab" aria-selected="true" data-view="dex">Classeur</button>
       <button role="tab" aria-selected="false" data-view="stats">Statistiques</button>
       <button role="tab" aria-selected="false" data-view="trade">Échanges &amp; souhaits</button>
+      <button role="tab" aria-selected="false" data-view="friends">Amis</button>
       <button role="tab" aria-selected="false" data-view="save">Sauvegarde</button>
     </nav>
   </div>
@@ -194,6 +206,7 @@ footer a{color:inherit}
 
 <main>
   <section class="view" id="view-dex">
+    <div id="viewbar"></div>
     <div class="sets" id="sets"></div>
     <div class="progress" id="progress"></div>
     <div class="tools">
@@ -209,6 +222,7 @@ footer a{color:inherit}
   </section>
   <section class="view" id="view-stats" hidden></section>
   <section class="view" id="view-trade" hidden></section>
+  <section class="view" id="view-friends" hidden></section>
   <section class="view" id="view-save" hidden>
     <h2 class="sec">Sauvegarde</h2>
     <div class="panels">
@@ -254,6 +268,7 @@ const C=[[0,"1","c","N","nf",0.06,0.17,0.2,0.31,0],[0,"2","c","N","nf",0.07,0.12
 const VAR={D:"Langue naine",N:"Normale",F:"Plein art",B:"Sans bordure",W:"Showcase",P:"Poster",S:"Surge foil",G:"Or scintillant",E:"Art étendu",X:"Box topper",U:"Bundle"};
 const RAR={c:"Commune",u:"Inhabituelle",r:"Rare",m:"Mythique"};
 const COL={W:"Blanc",U:"Bleu",B:"Noir",R:"Rouge",G:"Vert",M:"Multicolore",C:"Incolore",L:"Terrain"};
+const FIREBASE_CONFIG={apiKey:"AIzaSyA5YvJBXoUmyAU8PkhxgkvWcAC2yJhGCnE",authDomain:"hobbitdex.firebaseapp.com",projectId:"hobbitdex",storageBucket:"hobbitdex.firebasestorage.app",messagingSenderId:"498194624942",appId:"1:498194624942:web:4d625b27b556b0b9d8983f"};
 const SNAP_DATE="11.10.2026";
 const API_FR="https://api.scryfall.com/cards/search?q=(e%3Ahob+or+e%3Ahoc)+lang%3Afr&unique=prints&order=set&include_extras=true&include_variations=true";
 const API="https://api.scryfall.com/cards/search?q=(e%3Ahob+or+e%3Ahoc)&unique=prints&order=set&include_extras=true&include_variations=true";
@@ -315,9 +330,10 @@ try{coll=clean(JSON.parse(lsGet(LS)||"{}"))}catch(e){}
 const ui={set:"hob",q:"",rar:"",col:"",v:"",sort:"num",status:"all",cur:"eur",view:"dex",big:false,lang:"fr"};
 try{const u=JSON.parse(lsGet(LSU)||"{}");for(const k of ["set","sort","status","cur","big","lang"])if(u[k]!==undefined)ui[k]=u[k]}catch(e){}
 function saveUI(){lsSet(LSU,JSON.stringify({set:ui.set,sort:ui.sort,status:ui.status,cur:ui.cur,big:ui.big,lang:ui.lang}))}
-const E=k=>coll[k]||{n:0,f:0,t:0,w:false};
-const qty=k=>{const e=coll[k];return e?e.n+e.f:0};
-function persist(){if(!lsSet(LS,JSON.stringify(coll)))toast("Impossible d'enregistrer : le navigateur bloque le stockage.");}
+const curColl=()=>viewing?viewing.cards:coll;
+const E=k=>curColl()[k]||{n:0,f:0,t:0,w:false};
+const qty=k=>{const e=curColl()[k];return e?e.n+e.f:0};
+function persist(){if(!lsSet(LS,JSON.stringify(coll)))toast("Impossible d'enregistrer : le navigateur bloque le stockage.");if(typeof syncChanged==="function")syncChanged()}
 
 /* ---------- helpers ---------- */
 const FR=c=>ui.lang==="fr";
@@ -392,12 +408,12 @@ function renderSheet(){if(!openK)return;const c=BYK[openK];if(!c){closeSheet();r
    '<div class="meta num">'+c.set.toUpperCase()+' · n° '+c.cn+' · '+RAR[c.r]+(c.artist?' · '+esc(c.artist):'')+'</div><h2>'+esc(N(c))+'</h2>'+(ui.lang==="fr"&&c.nameFr&&c.nameFr!==c.name?'<div class="meta">'+esc(c.name)+'</div>':"")+(ui.lang==="fr"&&dataSrc!=="snapshot"&&c.v!=="D"&&!c.frPrint?'<div class="meta" style="color:var(--warn)">Cette version n\'existe qu\'en anglais</div>':"")+
    '<div class="meta">'+manaHTML(c.mana)+' '+esc(T(c))+(c.pt?' · '+c.pt:'')+'</div>'+(X(c)?'<div class="oracle">'+esc(X(c))+'</div>':"")+
    '<div class="facts"><div><small>Version</small><b style="font-family:var(--f-body);font-weight:700">'+VAR[c.v]+'</b></div><div><small>Prix normale</small><b>'+money(pN(c))+'</b></div><div><small>Prix foil</small><b>'+money(pF(c))+'</b></div></div>'+
-   '<div style="margin-top:8px">'+(c.fin.includes("n")?stepper("n","Normale","Exemplaires non-foil"):"")+(c.fin.includes("f")?stepper("f","Foil",c.fin==="f"?"Cette version existe seulement en foil":"Exemplaires brillants"):"")+
+   (viewing?'<div style="margin-top:8px"><div class="row"><div class="lbl"><b>'+esc(viewing.pseudo)+' en a</b><small>'+e.n+' normale(s) · '+e.f+' foil · '+e.t+' à échanger'+(e.w?" · la cherche":"")+'</small></div></div>'+(coll[c.k]?'<div class="row"><div class="lbl"><b>Toi</b><small>'+(coll[c.k].n+coll[c.k].f)+' exemplaire(s)</small></div></div>':'<div class="row"><div class="lbl"><b>Toi</b><small>Tu ne l\'as pas</small></div></div>')+'</div>':'<div style="margin-top:8px">'+(c.fin.includes("n")?stepper("n","Normale","Exemplaires non-foil"):"")+(c.fin.includes("f")?stepper("f","Foil",c.fin==="f"?"Cette version existe seulement en foil":"Exemplaires brillants"):"")+
    '<div class="row"><div class="lbl"><b>À échanger</b><small>'+(n?"Jusqu'à "+n+" exemplaire"+(n>1?"s":""):"Ajoute d'abord un exemplaire")+'</small></div><div class="step"><button data-step="t" data-d="-1" aria-label="Moins à échanger">−</button><output>'+e.t+'</output><button data-step="t" data-d="1" aria-label="Plus à échanger">+</button></div></div>'+
-   '<div class="row"><div class="lbl"><b>Liste de souhaits</b><small>Pour la retrouver dans « Je cherche »</small></div><button class="toggle" data-wish="1" aria-pressed="'+e.w+'">'+(e.w?"Je la cherche ✓":"Je la cherche")+'</button></div></div>'+
+   '<div class="row"><div class="lbl"><b>Liste de souhaits</b><small>Pour la retrouver dans « Je cherche »</small></div><button class="toggle" data-wish="1" aria-pressed="'+e.w+'">'+(e.w?"Je la cherche ✓":"Je la cherche")+'</button></div></div>')+
    '<a class="link" href="'+scry(c)+'" target="_blank" rel="noopener">Voir sur Scryfall ↗</a></div></div></div></div>';
   const s=document.querySelector(".sheet");if(s)s.scrollTop=keep}
-function mutate(k,fn){const e=Object.assign({n:0,f:0,t:0,w:false},coll[k]);fn(e);e.n=Math.max(0,e.n);e.f=Math.max(0,e.f);e.t=Math.max(0,Math.min(e.t,e.n+e.f));
+function mutate(k,fn){if(viewing){toast("Classeur de "+viewing.pseudo+" : lecture seule");return}const e=Object.assign({n:0,f:0,t:0,w:false},coll[k]);fn(e);e.n=Math.max(0,e.n);e.f=Math.max(0,e.f);e.t=Math.max(0,Math.min(e.t,e.n+e.f));
   if(e.n||e.f||e.t||e.w)coll[k]=e;else delete coll[k];persist();renderAll()}
 
 /* ---------- Stats ---------- */
@@ -429,11 +445,12 @@ function copyText(t){if(navigator.clipboard&&navigator.clipboard.writeText)navig
 /* ---------- navigation ---------- */
 function showView(){document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.view===ui.view));
   document.querySelectorAll(".view").forEach(v=>v.hidden=v.id!=="view-"+ui.view);renderAll()}
-function renderAll(){if(ui.view==="dex"){renderSets();renderProgress();renderStatus();renderGrid()}
+function renderAll(){document.body.classList.toggle("viewing",!!viewing);if(ui.view==="friends")renderFriends();
+  if(ui.view==="dex"){const vb=document.getElementById("viewbar");vb.innerHTML=viewing?'<div class="viewbar"><span>Tu regardes le classeur de <b>'+esc(viewing.pseudo)+'</b> (lecture seule)</span><button class="btn" id="stop-view">Revenir à mon classeur</button></div>':"";renderSets();renderProgress();renderStatus();renderGrid()}
   if(ui.view==="stats")renderStats();if(ui.view==="trade")renderTrade();if(ui.view==="save"){document.getElementById("export").value=JSON.stringify(coll);updateSync()}renderSheet()}
 
 document.addEventListener("click",ev=>{const t=ev.target;
-  const tab=t.closest("nav.tabs button");if(tab){ui.view=tab.dataset.view;showView();return}
+  const tab=t.closest("nav.tabs button");if(tab){viewing=null;ui.view=tab.dataset.view;showView();return}
   const ch=t.closest("[data-set]");if(ch){ui.set=ch.dataset.set;saveUI();renderVarSelect();renderAll();return}
   if(t.closest("#lang")){ui.lang=ui.lang==="fr"?"en":"fr";saveUI();renderAll();return}
   if(t.closest("#cur")){ui.cur=ui.cur==="eur"?"usd":"eur";saveUI();renderAll();return}
@@ -481,7 +498,175 @@ document.getElementById("offline").addEventListener("click",async ev=>{const b=e
   async function worker(){while(q.length){const u=q.shift();try{await fetch(u,{mode:"no-cors"})}catch(e){}done++;info.textContent=done+" / "+urls.length+" images"}}
   await Promise.all([worker(),worker(),worker(),worker()]);info.textContent="Terminé : "+urls.length+" images disponibles hors connexion.";b.disabled=false});
 
-renderVarSelect();updateSync();showView();refreshData(false);
+/* ---------- Comptes & amis (Firebase) ---------- */
+const FB_V="10.12.2", FB="https://www.gstatic.com/firebasejs/"+FB_V+"/";
+const S={ready:false,fb:null,auth:null,db:null,user:null,profile:null,profileLoaded:false,friends:[],fdata:{},merge:null,unsub:null,dirty:false,timer:null,busy:false,authMode:"login",err:"",open:null};
+let viewing=null; // {uid,pseudo,cards} quand on regarde le classeur d'un ami
+
+async function fbInit(){
+  if(!FIREBASE_CONFIG)return;
+  try{
+    const [app,auth,fs]=await Promise.all([import(FB+"firebase-app.js"),import(FB+"firebase-auth.js"),import(FB+"firebase-firestore.js")]);
+    S.fb={...app,...auth,...fs};
+    const a=app.initializeApp(FIREBASE_CONFIG);S.auth=auth.getAuth(a);S.db=fs.getFirestore(a);S.ready=true;
+    auth.onAuthStateChanged(S.auth,onUser);
+  }catch(e){S.err="Connexion au service de comptes impossible (hors ligne ?).";renderAcct()}
+}
+const D=(...p)=>S.fb.doc(S.db,...p);
+
+async function onUser(u){
+  if(S.unsub){S.unsub();S.unsub=null}
+  S.user=u||null;S.profile=null;S.profileLoaded=false;S.friends=[];S.fdata={};S.merge=null;
+  if(!u){renderAcct();renderAll();return}
+  renderAcct();
+  try{
+    const [p,pv,c]=await Promise.all([S.fb.getDoc(D("profiles",u.uid)),S.fb.getDoc(D("private",u.uid)),S.fb.getDoc(D("collections",u.uid))]);
+    S.profile=p.exists()?p.data():null;S.profileLoaded=true;
+    S.friends=pv.exists()&&Array.isArray(pv.data().friends)?pv.data().friends:[];
+    const remote=c.exists()?clean(c.data().cards):{};const rn=Object.keys(remote).length,ln=Object.keys(coll).length;
+    if(!rn&&ln)pushNow();
+    else if(rn&&!ln){coll=remote;lsSet(LS,JSON.stringify(coll))}
+    else if(rn&&ln&&JSON.stringify(sortObj(remote))!==JSON.stringify(sortObj(coll)))S.merge=remote;
+    S.unsub=S.fb.onSnapshot(D("collections",u.uid),snap=>{
+      if(snap.metadata.hasPendingWrites||S.dirty||S.merge||!snap.exists())return;
+      const d=clean(snap.data().cards);if(JSON.stringify(sortObj(d))!==JSON.stringify(sortObj(coll))){coll=d;lsSet(LS,JSON.stringify(coll));renderAll()}
+    },()=>{});
+    loadFriends();
+  }catch(e){toast("Erreur de synchronisation : "+(e.code||e.message))}
+  renderAcct();renderAll();
+}
+function sortObj(o){return Object.keys(o).sort().reduce((a,k)=>(a[k]=o[k],a),{})}
+function listsOf(c){const trade={},wish=[];for(const [k,e] of Object.entries(c)){if(e.t)trade[k]=e.t;if(e.w)wish.push(k)}return {trade,wish}}
+function syncChanged(){if(!S.user||S.merge)return;S.dirty=true;clearTimeout(S.timer);S.timer=setTimeout(pushNow,900);renderAcct()}
+async function pushNow(){if(!S.user)return;S.dirty=false;
+  try{const b=S.fb.writeBatch(S.db),now=S.fb.serverTimestamp();
+    b.set(D("collections",S.user.uid),{cards:coll,updated:now});b.set(D("lists",S.user.uid),{...listsOf(coll),updated:now});await b.commit()}
+  catch(e){S.dirty=true;toast("Pas synchronisé (hors ligne ?). Nouvel essai bientôt.");clearTimeout(S.timer);S.timer=setTimeout(pushNow,15000)}
+  renderAcct()}
+function resolveMerge(how){const R=S.merge;S.merge=null;
+  if(how==="remote")coll=R;
+  else if(how==="merge"){const keys=new Set([...Object.keys(R),...Object.keys(coll)]);const out={};
+    keys.forEach(k=>{const a=R[k]||{n:0,f:0,t:0,w:false},b=coll[k]||{n:0,f:0,t:0,w:false};out[k]={n:Math.max(a.n,b.n),f:Math.max(a.f,b.f),t:Math.max(a.t,b.t),w:a.w||b.w}});coll=clean(out)}
+  lsSet(LS,JSON.stringify(coll));pushNow();renderAll();toast("Collection synchronisée")}
+
+/* -- connexion -- */
+const AUTH_ERR={"auth/invalid-credential":"E-mail ou mot de passe incorrect.","auth/wrong-password":"E-mail ou mot de passe incorrect.","auth/user-not-found":"Aucun compte avec cet e-mail.",
+  "auth/email-already-in-use":"Un compte existe déjà avec cet e-mail. Utilise « Se connecter ».","auth/weak-password":"Le mot de passe doit faire au moins 6 caractères.",
+  "auth/invalid-email":"Cette adresse e-mail n'est pas valide.","auth/popup-closed-by-user":"Fenêtre de connexion fermée.","auth/popup-blocked":"Le navigateur a bloqué la fenêtre. Autorise les pop-ups ou utilise l'e-mail.",
+  "auth/unauthorized-domain":"Ce site n'est pas autorisé dans Firebase (Domaines autorisés).","auth/network-request-failed":"Pas de connexion internet.","auth/too-many-requests":"Trop d'essais. Attends quelques minutes."};
+const authMsg=e=>AUTH_ERR[e&&e.code]||("Erreur : "+((e&&e.code)||e));
+async function loginGoogle(){try{await S.fb.signInWithPopup(S.auth,new S.fb.GoogleAuthProvider())}catch(e){S.err=authMsg(e);renderAcct()}}
+async function loginEmail(create){const em=document.getElementById("au-email").value.trim(),pw=document.getElementById("au-pass").value;S.err="";
+  try{create?await S.fb.createUserWithEmailAndPassword(S.auth,em,pw):await S.fb.signInWithEmailAndPassword(S.auth,em,pw)}catch(e){S.err=authMsg(e);renderAcct()}}
+async function resetPw(){const em=document.getElementById("au-email").value.trim();if(!em){S.err="Écris d'abord ton e-mail.";renderAcct();return}
+  try{await S.fb.sendPasswordResetEmail(S.auth,em);toast("E-mail de réinitialisation envoyé")}catch(e){S.err=authMsg(e);renderAcct()}}
+
+/* -- profil -- */
+const PSEUDO_RE=/^[A-Za-z0-9_-]{3,20}$/;
+async function saveProfile(){const ps=document.getElementById("pf-pseudo").value.trim(),share=document.getElementById("pf-share").value;S.err="";
+  if(!PSEUDO_RE.test(ps)){S.err="Pseudo : 3 à 20 caractères, lettres, chiffres, - ou _ (sans espace ni accent).";renderAcct();return}
+  const low=ps.toLowerCase(),uid=S.user.uid,old=S.profile&&S.profile.pseudoLower;
+  try{const b=S.fb.writeBatch(S.db);
+    if(old!==low){const taken=await S.fb.getDoc(D("pseudos",low));if(taken.exists()&&taken.data().uid!==uid){S.err="Ce pseudo est déjà pris.";renderAcct();return}
+      if(!taken.exists())b.set(D("pseudos",low),{uid});if(old)b.delete(D("pseudos",old))}
+    const prof={pseudo:ps,pseudoLower:low,share,updated:S.fb.serverTimestamp()};b.set(D("profiles",uid),prof);await b.commit();
+    S.profile={...prof};toast("Profil enregistré");if(!S.merge)pushNow()}
+  catch(e){S.err=e.code==="permission-denied"?"Ce pseudo est déjà pris.":"Erreur : "+(e.code||e.message)}
+  renderAcct()}
+async function saveShare(v){try{await S.fb.setDoc(D("profiles",S.user.uid),{...S.profile,share:v,updated:S.fb.serverTimestamp()});S.profile.share=v;toast("Partage : "+SHARE[v])}catch(e){toast("Erreur : "+(e.code||e.message))}renderAcct()}
+
+/* -- amis -- */
+async function addFriend(){const inp=document.getElementById("fr-add"),ps=inp.value.trim().toLowerCase();S.err="";
+  if(!PSEUDO_RE.test(ps)){S.err="Écris le pseudo exact de ton ami.";renderAcct();return}
+  try{const p=await S.fb.getDoc(D("pseudos",ps));if(!p.exists()){S.err="Aucun joueur avec ce pseudo.";renderAcct();return}
+    const uid=p.data().uid;if(uid===S.user.uid){S.err="C'est ton propre pseudo.";renderAcct();return}
+    if(!S.friends.includes(uid)){S.friends=[...S.friends,uid];await S.fb.setDoc(D("private",S.user.uid),{friends:S.friends})}
+    inp.value="";await loadFriend(uid);S.open=uid;toast("Ami ajouté")}
+  catch(e){S.err="Erreur : "+(e.code||e.message)}renderAcct()}
+async function removeFriend(uid){S.friends=S.friends.filter(x=>x!==uid);delete S.fdata[uid];if(S.open===uid)S.open=null;
+  try{await S.fb.setDoc(D("private",S.user.uid),{friends:S.friends})}catch(e){}renderAcct()}
+async function loadFriend(uid){const f={uid,profile:null,lists:null,cards:null};
+  try{const p=await S.fb.getDoc(D("profiles",uid));f.profile=p.exists()?p.data():null}catch(e){}
+  const sh=f.profile&&f.profile.share;
+  if(sh==="trades"||sh==="all"){try{const l=await S.fb.getDoc(D("lists",uid));f.lists=l.exists()?l.data():{trade:{},wish:[]}}catch(e){}}
+  if(sh==="all"){try{const c=await S.fb.getDoc(D("collections",uid));f.cards=c.exists()?clean(c.data().cards):{}}catch(e){}}
+  S.fdata[uid]=f}
+async function loadFriends(){await Promise.all(S.friends.map(loadFriend));renderAcct()}
+function matchesOf(f){const L=f.lists||{trade:{},wish:[]},trade=L.trade||{},wish=L.wish||[];
+  const theyHave=Object.keys(trade).filter(k=>BYK[k]);
+  const forMyWish=theyHave.filter(k=>coll[k]&&coll[k].w);
+  const forMyMissing=theyHave.filter(k=>!(coll[k]&&(coll[k].n+coll[k].f))&&!(coll[k]&&coll[k].w));
+  const iCanGive=wish.filter(k=>BYK[k]&&coll[k]&&coll[k].t>0);
+  return {theyHave,forMyWish,forMyMissing,iCanGive,wish:wish.filter(k=>BYK[k])}}
+
+/* -- affichage -- */
+const SHARE={private:"Rien (privé)",trades:"Mes échanges et souhaits",all:"Toute ma collection"};
+function renderAcct(){
+  const b=document.getElementById("acct");if(b){b.hidden=!FIREBASE_CONFIG;
+    b.textContent=S.user?(S.profile?S.profile.pseudo:"Mon compte")+(S.dirty?" · …":" · ✓"):"Se connecter";b.classList.toggle("on",!!S.user)}
+  if(ui.view==="friends")renderFriends()}
+function renderFriends(){const host=document.getElementById("view-friends");if(!host)return;
+  const err=S.err?'<p class="note" style="color:var(--wish)">'+esc(S.err)+'</p>':"";
+  if(!FIREBASE_CONFIG){host.innerHTML='<h2 class="sec">Amis</h2><div class="empty">Les comptes ne sont pas encore activés sur ce site.</div>';return}
+  if(!S.ready){host.innerHTML='<h2 class="sec">Amis</h2><div class="empty">'+(S.err||"Chargement…")+'</div>';return}
+  if(!S.user){host.innerHTML='<h2 class="sec">Mon compte</h2><div class="panels"><div class="panel"><h3>Se connecter</h3>'+
+    '<p style="margin-top:0">Avec un compte, ta collection est synchronisée sur tous tes appareils et tu peux la partager avec tes amis.</p>'+
+    '<div class="actions"><button class="btn" id="au-google">Continuer avec Google</button></div>'+
+    '<hr style="border:0;border-top:1px solid var(--line);margin:16px 0"><h3>Ou avec un e-mail</h3>'+
+    '<div class="form"><label>E-mail<input id="au-email" type="email" autocomplete="email"></label><label>Mot de passe<input id="au-pass" type="password" autocomplete="current-password" minlength="6"></label></div>'+
+    '<div class="actions"><button class="btn" id="au-login">Se connecter</button><button class="btn ghost" id="au-create">Créer un compte</button><button class="btn ghost" id="au-reset">Mot de passe oublié</button></div>'+err+
+    '<p class="note">Sur iPhone, si l\'app est installée sur l\'écran d\'accueil, la connexion Google peut échouer : utilise l\'e-mail.</p></div></div>';return}
+  if(!S.profileLoaded){host.innerHTML='<h2 class="sec">Mon compte</h2><div class="empty">Chargement du profil…</div>';return}
+  const mergeBox=S.merge?'<div class="panel" style="border-color:var(--warn)"><h3>Deux collections différentes</h3><p style="margin-top:0">Ton compte a déjà une collection ('+Object.keys(S.merge).length+' cartes) et cet appareil en a une autre ('+Object.keys(coll).length+' cartes). Que faire ?</p>'+
+    '<div class="actions"><button class="btn" data-merge="merge">Fusionner les deux</button><button class="btn ghost" data-merge="remote">Garder celle du compte</button><button class="btn ghost" data-merge="local">Garder celle de cet appareil</button></div><p class="note">Fusionner garde, pour chaque carte, le plus grand nombre d\'exemplaires des deux côtés.</p></div>':"";
+  const pf=S.profile||{pseudo:"",share:"trades"};
+  const profBox='<div class="panel"><h3>'+(S.profile?"Mon profil":"Choisis ton pseudo")+'</h3>'+(S.profile?"":'<p style="margin-top:0">C\'est avec ce pseudo que tes amis te trouvent.</p>')+
+    '<div class="form"><label>Pseudo<input id="pf-pseudo" value="'+esc(pf.pseudo)+'" maxlength="20" autocomplete="nickname"></label>'+
+    '<label>Ce que mes amis peuvent voir<select id="pf-share">'+Object.entries(SHARE).map(([k,l])=>'<option value="'+k+'"'+(pf.share===k?" selected":"")+'>'+l+'</option>').join("")+'</select></label></div>'+
+    '<div class="actions"><button class="btn" id="pf-save">Enregistrer</button></div>'+(S.profile?"":err)+
+    '<p class="note">Connecté : '+esc(S.user.email||"")+' · <button class="linkbtn" id="au-out">Se déconnecter</button></p></div>';
+  if(!S.profile){host.innerHTML='<h2 class="sec">Mon compte</h2><div class="panels">'+mergeBox+profBox+'</div>';return}
+  const fr=S.friends.map(uid=>S.fdata[uid]).filter(Boolean);
+  const card=f=>{const p=f.profile;if(!p)return '<li><span>Compte supprimé</span><button class="linkbtn" data-unfriend="'+f.uid+'">Retirer</button></li>';
+    const m=matchesOf(f);const tag=p.share==="private"?"profil privé":(m.forMyWish.length+" que tu cherches · "+m.iCanGive.length+" qu'il cherche");
+    return '<li><button data-friend="'+f.uid+'"><span><b>'+esc(p.pseudo)+'</b> <span class="n">· '+tag+'</span></span></button><span class="n">'+(S.open===f.uid?"▾":"▸")+'</span></li>'};
+  let detail="";const f=S.open&&S.fdata[S.open];
+  if(f&&f.profile){const p=f.profile,m=matchesOf(f);
+    const lst=(keys,right)=>keys.length?'<ul class="list">'+keys.map(k=>liHTML(BYK[k],right(k))).join("")+'</ul>':'<p class="note">Rien pour l\'instant.</p>';
+    const ft=(f.lists&&f.lists.trade)||{};
+    detail=p.share==="private"?'<div class="panel"><h3>'+esc(p.pseudo)+'</h3><p class="note">'+esc(p.pseudo)+' ne partage rien pour l\'instant.</p><div class="actions"><button class="btn ghost" data-unfriend="'+f.uid+'">Retirer de mes amis</button></div></div>':
+      '<div class="panel"><h3>'+esc(p.pseudo)+' propose et tu la cherches ('+m.forMyWish.length+')</h3>'+lst(m.forMyWish,k=>"×"+ft[k])+'</div>'+
+      '<div class="panel"><h3>'+esc(p.pseudo)+' cherche et tu la proposes ('+m.iCanGive.length+')</h3>'+lst(m.iCanGive,k=>"tu as ×"+coll[k].t)+'</div>'+
+      '<div class="panel"><h3>'+esc(p.pseudo)+' propose et tu ne l\'as pas ('+m.forMyMissing.length+')</h3>'+lst(m.forMyMissing,k=>"×"+ft[k])+'</div>'+
+      '<div class="panel"><h3>Tout ce que '+esc(p.pseudo)+' cherche ('+m.wish.length+')</h3>'+lst(m.wish,k=>money(best(BYK[k])))+
+      '<div class="actions">'+(f.cards?'<button class="btn" data-view-friend="'+f.uid+'">Voir son classeur</button>':"")+'<button class="btn ghost" data-refresh-friend="'+f.uid+'">Actualiser</button><button class="btn ghost" data-unfriend="'+f.uid+'">Retirer de mes amis</button></div></div>'}
+  host.innerHTML='<h2 class="sec">Amis</h2><div class="panels">'+mergeBox+
+    '<div class="panel"><h3>Mes amis ('+fr.length+')</h3><div class="form row2"><label>Ajouter par pseudo<input id="fr-add" placeholder="pseudo de ton ami" autocapitalize="off"></label><button class="btn" id="fr-add-btn">Ajouter</button></div>'+(S.profile?err:"")+
+    (fr.length?'<ul class="list">'+fr.map(card).join("")+'</ul>':'<p class="note">Donne ton pseudo <b>'+esc(S.profile.pseudo)+'</b> à tes amis et ajoute le leur ici.</p>')+'</div>'+
+    profBox+'</div>'+(detail?'<div class="panels" style="margin-top:14px">'+detail+'</div>':"")}
+function viewFriend(uid){const f=S.fdata[uid];if(!f||!f.cards)return;viewing={uid,pseudo:f.profile.pseudo,cards:f.cards};ui.view="dex";ui.status="all";showView();window.scrollTo(0,0)}
+function stopViewing(){viewing=null;showView()}
+
+document.addEventListener("click",ev=>{const t=ev.target;
+  if(t.closest("#acct")){viewing=null;ui.view="friends";showView();return}
+  if(t.closest("#au-google")){loginGoogle();return}
+  if(t.closest("#au-login")){loginEmail(false);return}
+  if(t.closest("#au-create")){loginEmail(true);return}
+  if(t.closest("#au-reset")){resetPw();return}
+  if(t.closest("#au-out")){S.fb.signOut(S.auth);return}
+  if(t.closest("#pf-save")){saveProfile();return}
+  if(t.closest("#fr-add-btn")){addFriend();return}
+  const mg=t.closest("[data-merge]");if(mg){resolveMerge(mg.dataset.merge);return}
+  const fb=t.closest("[data-friend]");if(fb){S.open=S.open===fb.dataset.friend?null:fb.dataset.friend;renderFriends();return}
+  const uf=t.closest("[data-unfriend]");if(uf){removeFriend(uf.dataset.unfriend);return}
+  const rf=t.closest("[data-refresh-friend]");if(rf){loadFriend(rf.dataset.refreshFriend).then(renderFriends);return}
+  const vf=t.closest("[data-view-friend]");if(vf){viewFriend(vf.dataset.viewFriend);return}
+  if(t.closest("#stop-view")){stopViewing();return}
+},true);
+document.addEventListener("change",ev=>{if(ev.target.id==="pf-share"&&S.profile)saveShare(ev.target.value)});
+document.addEventListener("keydown",ev=>{if(ev.key==="Enter"&&ev.target.id==="fr-add")addFriend();if(ev.key==="Enter"&&ev.target.id==="au-pass")loginEmail(false)});
+
+renderVarSelect();updateSync();showView();refreshData(false);renderAcct();fbInit();
 if("serviceWorker" in navigator&&location.protocol==="https:")navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script>
 </body>
