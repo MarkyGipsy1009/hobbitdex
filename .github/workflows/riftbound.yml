@@ -16,11 +16,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Construire riftbound.json
+      - name: Récupérer les prix Cardmarket
         run: node scripts/build-riftbound.mjs
       - name: Enregistrer si quelque chose a changé
         run: |
           git config user.name "hobbitdex-bot"
           git config user.email "hobbitdex-bot@users.noreply.github.com"
-          git add riftbound.json
+          git add riftbound-prices.json
           git diff --cached --quiet || (git commit -m "Riftbound : cartes et prix du $(date -u +%d.%m.%Y)" && git push)
