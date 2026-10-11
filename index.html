@@ -436,33 +436,37 @@ const PRODUCTS=[["pb","Play Booster",1],["pbd","Boîte de 30 Play Boosters",30],
 const PROD=Object.fromEntries(PRODUCTS.map(p=>[p[0],{name:p[1],packs:p[2]}]));
 const LSP="hobbitdex.purchases";let purchases=[];
 try{const p=JSON.parse(lsGet(LSP)||"[]");if(Array.isArray(p))purchases=cleanPurch(p)}catch(e){}
-function cleanPurch(a){return (Array.isArray(a)?a:[]).filter(x=>x&&PROD[x.p]).map(x=>({id:String(x.id||Math.random().toString(36).slice(2)),p:x.p,q:Math.max(1,Math.min(999,parseInt(x.q,10)||1)),u:Math.max(0,Math.round((+x.u||0)*100)/100),d:/^\d{4}-\d{2}-\d{2}$/.test(x.d)?x.d:new Date().toISOString().slice(0,10),note:String(x.note||"").slice(0,80)}))}
+function cleanPurch(a){return (Array.isArray(a)?a:[]).filter(x=>x&&PROD[x.p]).map(x=>({id:String(x.id||Math.random().toString(36).slice(2)),p:x.p,q:Math.max(1,Math.min(999,parseInt(x.q,10)||1)),u:Math.max(0,Math.round((+x.u||0)*100)/100),c:x.c==="eur"?"eur":"chf",d:/^\d{4}-\d{2}-\d{2}$/.test(x.d)?x.d:new Date().toISOString().slice(0,10),note:String(x.note||"").slice(0,80)}))}
 function savePurch(){lsSet(LSP,JSON.stringify(purchases));if(typeof syncPurch==="function")syncPurch()}
 let delArm=null;
+let buyCur=(lsGet("hobbitdex.buycur")==="eur")?"eur":"chf", entryCur=(lsGet("hobbitdex.entrycur")==="eur")?"eur":"chf";
+const inBuy=(v,c)=>c===buyCur?v:(c==="eur"?v*RATES.CHF:v/RATES.CHF);
+const bm=v=>fmt(v||0,buyCur);
 function renderBuy(){const host=document.getElementById("view-buy");const today=new Date().toISOString().slice(0,10);
-  const spent=purchases.reduce((s,x)=>s+x.q*x.u,0),packs=purchases.reduce((s,x)=>s+x.q*PROD[x.p].packs,0);
-  let valEur=0;CARDS.forEach(c=>{const e=coll[c.k];if(e)valEur+=e.n*(asChf(c.eur,c.usd)||asChf(c.eurf,c.usdf))+e.f*(asChf(c.eurf,c.usdf)||asChf(c.eur,c.usd))});
+  const spent=purchases.reduce((s,x)=>s+inBuy(x.q*x.u,x.c),0),packs=purchases.reduce((s,x)=>s+x.q*PROD[x.p].packs,0);
+  let valEur=0;CARDS.forEach(c=>{const e=coll[c.k];if(e)valEur+=e.n*(asChf(c.eur,c.usd)||asChf(c.eurf,c.usdf))+e.f*(asChf(c.eurf,c.usdf)||asChf(c.eur,c.usd))});valEur=inBuy(valEur,"chf");
   const diff=valEur-spent;
-  const byProd=PRODUCTS.map(([k,n])=>{const l=purchases.filter(x=>x.p===k);return [n,l.reduce((s,x)=>s+x.q,0),l.reduce((s,x)=>s+x.q*x.u,0)]}).filter(x=>x[1]);
+  const byProd=PRODUCTS.map(([k,n])=>{const l=purchases.filter(x=>x.p===k);return [n,l.reduce((s,x)=>s+x.q,0),l.reduce((s,x)=>s+inBuy(x.q*x.u,x.c),0)]}).filter(x=>x[1]);
   const rows=purchases.slice().sort((a,b)=>b.d.localeCompare(a.d)||0);
-  host.innerHTML='<h2 class="sec">Ce que j\'ai acheté</h2><div class="kpis">'+
-   '<div class="kpi"><small>Total dépensé</small><b>'+chf(spent)+'</b></div>'+
-   '<div class="kpi"><small>Valeur de ma collection</small><b>'+chf(valEur)+'</b></div>'+
-   '<div class="kpi"><small>'+(diff>=0?"Gain":"Perte")+' sur le papier</small><b style="color:'+(diff>=0?"var(--good)":"var(--wish)")+'">'+(diff>=0?"+":"−")+chf(Math.abs(diff)).replace("CHF ","CHF ")+'</b></div>'+
-   '<div class="kpi"><small>Boosters ouverts</small><b>'+packs+(packs?' <span class="n" style="font-size:13px">· '+chf(spent/packs)+' / booster</span>':"")+'</b></div></div>'+
+  host.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 class="sec">Ce que j\'ai acheté</h2><div class="sets" role="group" aria-label="Devise d\'affichage">'+[["chf","CHF"],["eur","€ EUR"]].map(([k,l])=>'<button class="chip" data-buycur="'+k+'" aria-pressed="'+(buyCur===k)+'">'+l+'</button>').join("")+'</div></div><div class="kpis">'+
+   '<div class="kpi"><small>Total dépensé</small><b>'+bm(spent)+'</b></div>'+
+   '<div class="kpi"><small>Valeur de ma collection</small><b>'+bm(valEur)+'</b></div>'+
+   '<div class="kpi"><small>'+(diff>=0?"Gain":"Perte")+' sur le papier</small><b style="color:'+(diff>=0?"var(--good)":"var(--wish)")+'">'+(diff>=0?"+":"−")+bm(Math.abs(diff))+'</b></div>'+
+   '<div class="kpi"><small>Boosters ouverts</small><b>'+packs+(packs?' <span class="n" style="font-size:13px">· '+bm(spent/packs)+' / booster</span>':"")+'</b></div></div>'+
    '<div class="panels"><div class="panel"><h3>Ajouter un achat</h3><div class="form">'+
    '<label>Produit<select id="bp-p">'+PRODUCTS.map(([k,n])=>'<option value="'+k+'">'+n+'</option>').join("")+'</select></label>'+
-   '<div class="form" style="grid-template-columns:1fr 1fr"><label>Quantité<input id="bp-q" type="number" inputmode="numeric" min="1" value="1"></label><label>Prix payé par pièce (CHF)<input id="bp-u" type="text" inputmode="decimal" autocomplete="off" placeholder="ex. 6.90"></label></div>'+
+   '<div class="form" style="grid-template-columns:1fr 1fr"><label>Quantité<input id="bp-q" type="number" inputmode="numeric" min="1" value="1"></label><label>Prix payé par pièce<span style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px"><input id="bp-u" type="text" inputmode="decimal" autocomplete="off" placeholder="ex. 6.90"><select id="bp-c" aria-label="Devise du prix" style="width:auto">'+[["chf","CHF"],["eur","EUR"]].map(([k,l])=>'<option value="'+k+'"'+(entryCur===k?" selected":"")+'>'+l+'</option>').join("")+'</select></span></label></div>'+
    '<div class="form" style="grid-template-columns:1fr 1fr"><label>Date<input id="bp-d" type="date" value="'+today+'"></label><label>Note (magasin…)<input id="bp-n" maxlength="80" placeholder="facultatif"></label></div>'+
-   '</div><div class="actions"><button class="btn" id="bp-add">Ajouter</button></div><p class="note">La valeur de la collection est calculée en CHF à partir des prix Cardmarket (taux du '+RATES.date.split("-").reverse().join(".")+').</p></div>'+
-   '<div class="panel"><h3>Par produit</h3>'+(byProd.length?'<ul class="list">'+byProd.map(([n,q,t])=>'<li><span>'+esc(n)+' <span class="n">×'+q+'</span></span><span class="n">'+chf(t)+'</span></li>').join("")+'</ul>':'<p class="note">Aucun achat enregistré.</p>')+'</div>'+
-   '<div class="panel" style="grid-column:1/-1"><h3>Historique ('+rows.length+')</h3>'+(rows.length?'<ul class="list">'+rows.map(x=>'<li><span><b>'+esc(PROD[x.p].name)+'</b> <span class="n">×'+x.q+' · '+x.d.split("-").reverse().join(".")+(x.note?" · "+esc(x.note):"")+'</span></span><span style="display:flex;gap:10px;align-items:center"><span class="n">'+chf(x.q*x.u)+(x.q>1?' ('+chf(x.u)+' pce)':'')+'</span><button class="linkbtn" data-delp="'+x.id+'">'+(delArm===x.id?"Confirmer":"Supprimer")+'</button></span></li>').join("")+'</ul>':'<p class="note">Ajoute ton premier achat avec le formulaire.</p>')+'</div></div>'}
+   '</div><div class="actions"><button class="btn" id="bp-add">Ajouter</button></div><p class="note">Les achats en CHF et en EUR sont additionnés au taux du jour. La valeur de la collection vient des prix Cardmarket (taux du '+RATES.date.split("-").reverse().join(".")+').</p></div>'+
+   '<div class="panel"><h3>Par produit</h3>'+(byProd.length?'<ul class="list">'+byProd.map(([n,q,t])=>'<li><span>'+esc(n)+' <span class="n">×'+q+'</span></span><span class="n">'+bm(t)+'</span></li>').join("")+'</ul>':'<p class="note">Aucun achat enregistré.</p>')+'</div>'+
+   '<div class="panel" style="grid-column:1/-1"><h3>Historique ('+rows.length+')</h3>'+(rows.length?'<ul class="list">'+rows.map(x=>'<li><span><b>'+esc(PROD[x.p].name)+'</b> <span class="n">×'+x.q+' · '+x.d.split("-").reverse().join(".")+(x.note?" · "+esc(x.note):"")+'</span></span><span style="display:flex;gap:10px;align-items:center"><span class="n">'+fmt(x.q*x.u,x.c)+(x.q>1?' ('+fmt(x.u,x.c)+' pce)':'')+'</span><button class="linkbtn" data-delp="'+x.id+'">'+(delArm===x.id?"Confirmer":"Supprimer")+'</button></span></li>').join("")+'</ul>':'<p class="note">Ajoute ton premier achat avec le formulaire.</p>')+'</div></div>'}
 function addPurchase(){const q=parseInt(document.getElementById("bp-q").value,10),u=parseFloat(String(document.getElementById("bp-u").value).replace(",","."));
   if(!(q>=1)){toast("Indique une quantité");return}if(!(u>=0)){toast("Indique le prix payé");return}
-  purchases.push(...cleanPurch([{id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),p:document.getElementById("bp-p").value,q,u,d:document.getElementById("bp-d").value,note:document.getElementById("bp-n").value.trim()}]));
-  savePurch();renderBuy();toast("Achat ajouté")}
+  purchases.push(...cleanPurch([{id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),p:document.getElementById("bp-p").value,q,u,c:document.getElementById("bp-c").value,d:document.getElementById("bp-d").value,note:document.getElementById("bp-n").value.trim()}]));
+  entryCur=document.getElementById("bp-c").value;lsSet("hobbitdex.entrycur",entryCur);savePurch();renderBuy();toast("Achat ajouté")}
 document.addEventListener("click",ev=>{const t=ev.target;
   if(t.closest("#bp-add")){addPurchase();return}
+  const bc=t.closest("[data-buycur]");if(bc){buyCur=bc.dataset.buycur;lsSet("hobbitdex.buycur",buyCur);renderBuy();return}
   const dp=t.closest("[data-delp]");if(dp){const id=dp.dataset.delp;if(delArm!==id){delArm=id;renderBuy();setTimeout(()=>{if(delArm===id){delArm=null;if(ui.view==="buy")renderBuy()}},4000);return}
     purchases=purchases.filter(x=>x.id!==id);delArm=null;savePurch();renderBuy();toast("Achat supprimé")}});
 
