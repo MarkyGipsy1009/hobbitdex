@@ -346,7 +346,7 @@ async function refreshData(force){
   updateSync();}
 
 /* ---------- Riftbound ---------- */
-const LSRB="hobbitdex.rb.v1";
+const LSRB="hobbitdex.rb.v2";
 const rbImg=(u,w)=>u?u+(u.includes("?")?"&":"?")+"w="+w+"&fm=webp":"";
 function fromRB(x){const dom=x.dom||[];return {k:"rb:"+x.k,g:"rb",set:String(x.set).toLowerCase(),cn:String(x.cn),num:parseInt(x.cn,10)||0,r:x.r,v:x.v,fin:x.fin||"nf",
   eur:x.eur||0,eurf:x.eurf||0,usd:0,usdf:0,name:x.name,mana:"",cost:x.e,might:x.m,power:x.p,type:x.type+(x.sup?" · "+x.sup:""),colors:"",dom,
@@ -358,18 +358,34 @@ function rcToRaw(c){const m=c.name.match(/\(([^)]+)\)\s*$/);const VV={"":"N",Sta
   const RR={Common:"c",Uncommon:"u",Rare:"r",Epic:"e",Showcase:"s",Promo:"p"};const cl=c.classification||{},at=c.attributes||{};
   return {id:c.riftbound_id,k:c.riftbound_id+(v!=="N"?"~"+v.toLowerCase():""),set:c.set.set_id,cn:String(c.collector_number),name:c.name.replace(/\s*\([^)]*\)\s*$/,""),v,r:RR[cl.rarity]||"c",
     type:cl.type||"",sup:cl.supertype||"",dom:cl.domain||[],e:at.energy,m:at.might,p:at.power,text:(c.text&&c.text.plain)||"",img:(c.media&&c.media.image_url)||"",art:(c.media&&c.media.artist)||"",tags:c.tags||[],land:c.orientation==="landscape"?1:0,fin:"nf",eur:0,eurf:0,cm:0,ax:0}}
-// riftbound.json : d'abord la version fraîche du dépôt GitHub (raw), sinon celle publiée avec le site
+// Prix Riftbound : fichier riftbound-prices.json produit chaque nuit par la tâche GitHub (Cardmarket)
 function rbUrls(){const h=location.hostname,p=location.pathname.split("/").filter(Boolean);const out=[];
-  if(h.endsWith(".github.io")&&p.length)out.push("https://raw.githubusercontent.com/"+h.split(".")[0]+"/"+p[0]+"/main/riftbound.json");
-  out.push("riftbound.json");return out}
+  if(h.endsWith(".github.io")&&p.length)out.push("https://raw.githubusercontent.com/"+h.split(".")[0]+"/"+p[0]+"/main/riftbound-prices.json");
+  out.push("riftbound-prices.json");return out}
+// Extensions Cardmarket pour chaque extension Riftcodex
+const RB_EXP={OGN:[6286],OGS:[6289],SFD:[6399],UNL:[6491,6567],VEN:[6587,6588],PR:[6322,6483,6480,6681,6705],OPP:[6322,6483,6480,6681,6705,6567,6588],JDG:[6322,6483]};
+const RB_VORDER={N:0,ST:0,LX:1,A:2,M:3,O:4,SG:5,UL:6,GZ:6};
+const rbNorm=s=>s.toLowerCase().replace(/\s*\([^)]*\)\s*$/,"").replace(/ - /g,", ").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9, ']/g,"").replace(/\s+/g," ").trim();
+function buildRB(items,products){
+  const raws=items.map(c=>({rc:c,raw:rcToRaw(c)}));
+  if(products&&products.length){
+    const idx=new Map();for(const p of products){const k=p[2]+"|"+rbNorm(p[1]);if(!idx.has(k))idx.set(k,[]);idx.get(k).push(p)}
+    const tr=p=>p[3]||p[4]||0;const groups=new Map();
+    for(const x of raws){const k=x.rc.set.set_id+"|"+rbNorm(x.rc.name);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(x)}
+    const used=new Set();
+    for(const [k,arr] of groups){const [set,nm]=k.split("|");let cand=[];for(const e of RB_EXP[set]||[])cand.push(...(idx.get(e+"|"+nm)||[]));
+      cand=cand.filter(p=>!used.has(p[0]));if(!cand.length)continue;cand.sort((a,b)=>tr(a)-tr(b));
+      const cs=arr.slice().sort((a,b)=>(RB_VORDER[a.raw.v]??2)-(RB_VORDER[b.raw.v]??2)||a.rc.collector_number-b.rc.collector_number);
+      const exact=cand.length===cs.length;
+      cs.forEach((x,i)=>{const p=cand[Math.min(i,cand.length-1)];if(cand.length>=cs.length)used.add(p[0]);
+        x.raw.eur=p[3]||0;x.raw.eurf=p[4]||0;x.raw.cm=p[0];x.raw.ax=(!exact&&cs.length>1)?1:0;x.raw.fin=x.raw.eur&&x.raw.eurf?"nf":(x.raw.eurf&&!x.raw.eur?"f":"nf")})}}
+  const seen=new Set();return raws.map(({raw})=>{let k=raw.k;for(let n=2;seen.has(k);n++)k=raw.k+n;seen.add(k);raw.k=k;return raw})}
 async function refreshRB(force){
   if(!force&&rbSrc==="cache"&&Date.now()-rbAt<6*3600e3)return;
-  try{let d=null;
-    for(const u of rbUrls()){try{const r=await fetch(u,{cache:"no-cache"});if(r.ok){const j=await r.json();if(j&&Array.isArray(j.cards)&&j.cards.length){d=j;break}}}catch(e){}}
-    if(d&&Array.isArray(d.cards)&&d.cards.length){d.fetched=Date.now();d.src="file"}
-    else{const all=[];for(let page=1;;page++){const r=await fetch("https://api.riftcodex.com/cards?size=100&page="+page);if(!r.ok)throw new Error("HTTP "+r.status);const j=await r.json();all.push(...j.items);if(page>=j.pages)break}
-      const seen=new Set();const cards=all.map(rcToRaw).map(c=>{let k=c.k;for(let n=2;seen.has(k);n++)k=c.k+n;seen.add(k);c.k=k;return c});d={at:new Date().toISOString(),cards,fetched:Date.now(),src:"live"}}
-    setRB(d.cards,"cache",d.fetched);rbFileAt=d.at;rbHasPrices=d.src==="file";lsSet(LSRB,JSON.stringify({cards:d.cards,fetched:d.fetched,at:d.at,src:d.src}));
+  try{const items=[];for(let page=1;;page++){const r=await fetch("https://api.riftcodex.com/cards?size=100&page="+page);if(!r.ok)throw new Error("HTTP "+r.status);const j=await r.json();items.push(...j.items);if(page>=j.pages)break;await new Promise(s=>setTimeout(s,80))}
+    let P=null;for(const u of rbUrls()){try{const r=await fetch(u,{cache:"no-cache"});if(r.ok){const j=await r.json();if(j&&Array.isArray(j.products)&&j.products.length){P=j;break}}}catch(e){}}
+    const cards=buildRB(items,P&&P.products);const fetched=Date.now();
+    setRB(cards,"cache",fetched);rbFileAt=P?P.at:"";rbHasPrices=!!P;lsSet(LSRB,JSON.stringify({cards,fetched,at:rbFileAt,src:P?"file":"live"}));
     if(ui.game==="rb"){renderFilters();renderAll()}if(force)toast("Cartes Riftbound mises à jour")}
   catch(e){if(force||!RB.length)toast("Les cartes Riftbound ne se chargent pas (hors ligne ?)")}
   updateSync()}
@@ -430,7 +446,7 @@ const short=n=>n.split(" // ")[0];
 function setSyncText(t,ok){const s=document.getElementById("sync");s.classList.toggle("ok",!!ok);s.querySelector("span").textContent=t}
 function updateSync(){if(ui.game==="rb"){const d=rbAt?new Date(rbAt).toLocaleString("fr-CH",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"";
     if(!RB.length)setSyncText("Chargement des cartes Riftbound…",false);else setSyncText(rbHasPrices?"Cartes Riftcodex · prix Cardmarket du "+(rbFileAt?new Date(rbFileAt).toLocaleDateString("fr-CH"):d):"Cartes Riftcodex · prix pas encore disponibles",rbHasPrices);
-    const i=document.getElementById("data-info");if(i)i.textContent=rbHasPrices?"Les prix Riftbound viennent de Cardmarket et sont mis à jour chaque nuit par GitHub.":"Les prix Riftbound apparaîtront après le premier passage de la tâche GitHub (riftbound.json).";return}
+    const i=document.getElementById("data-info");if(i)i.textContent=rbHasPrices?"Les prix Riftbound viennent de Cardmarket et sont mis à jour chaque nuit par GitHub.":"Les prix Riftbound apparaîtront après le premier passage de la tâche GitHub (riftbound-prices.json).";return}
   const d=dataAt?new Date(dataAt).toLocaleString("fr-CH",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"";
   if(dataSrc==="snapshot")setSyncText("Hors ligne : cartes sans images, prix du "+SNAP_DATE,false);
   else setSyncText("Cartes et prix Scryfall du "+d,true);
