@@ -198,6 +198,7 @@ footer a{color:inherit}
       <button role="tab" aria-selected="true" data-view="dex">Classeur</button>
       <button role="tab" aria-selected="false" data-view="stats">Statistiques</button>
       <button role="tab" aria-selected="false" data-view="trade">Échanges &amp; souhaits</button>
+      <button role="tab" aria-selected="false" data-view="buy">Mes achats</button>
       <button role="tab" aria-selected="false" data-view="friends">Amis</button>
       <button role="tab" aria-selected="false" data-view="save">Sauvegarde</button>
     </nav>
@@ -223,6 +224,7 @@ footer a{color:inherit}
   <section class="view" id="view-stats" hidden></section>
   <section class="view" id="view-trade" hidden></section>
   <section class="view" id="view-friends" hidden></section>
+  <section class="view" id="view-buy" hidden></section>
   <section class="view" id="view-save" hidden>
     <h2 class="sec">Sauvegarde</h2>
     <div class="panels">
@@ -327,7 +329,7 @@ function clean(obj){const out={};if(!obj||typeof obj!=="object")return out;
     if(n||f||t||w)out[k]={n,f,t:Math.min(t,n+f),w};}
   return out;}
 try{coll=clean(JSON.parse(lsGet(LS)||"{}"))}catch(e){}
-const ui={set:"hob",q:"",rar:"",col:"",v:"",sort:"num",status:"all",cur:"eur",view:"dex",big:false,lang:"fr"};
+const ui={set:"hob",q:"",rar:"",col:"",v:"",sort:"num",status:"all",cur:"chf",view:"dex",big:false,lang:"fr"};
 try{const u=JSON.parse(lsGet(LSU)||"{}");for(const k of ["set","sort","status","cur","big","lang"])if(u[k]!==undefined)ui[k]=u[k]}catch(e){}
 function saveUI(){lsSet(LSU,JSON.stringify({set:ui.set,sort:ui.sort,status:ui.status,cur:ui.cur,big:ui.big,lang:ui.lang}))}
 const curColl=()=>viewing?viewing.cards:coll;
@@ -340,9 +342,20 @@ const FR=c=>ui.lang==="fr";
 const N=c=>FR(c)&&c.nameFr?c.nameFr:c.name, T=c=>FR(c)&&c.typeFr?c.typeFr:c.type, X=c=>FR(c)&&c.textFr?c.textFr:(c.text||"");
 const IS=c=>FR(c)&&c.imgSFr?c.imgSFr:c.imgS, IM=c=>FR(c)&&c.imgFr?c.imgFr:c.img;
 const esc=s=>String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
-const pN=c=>ui.cur==="eur"?c.eur:c.usd, pF=c=>ui.cur==="eur"?c.eurf:c.usdf;
+/* Taux de change (BCE via frankfurter.dev), rafraîchi une fois par jour */
+const LSR="hobbitdex.rates";let RATES={CHF:0.9313,USD:1.1206,date:"2026-10-09"};
+try{const r=JSON.parse(lsGet(LSR)||"null");if(r&&r.CHF&&r.USD)RATES=r}catch(e){}
+async function refreshRates(){if(RATES.at&&Date.now()-RATES.at<12*3600e3)return;
+  try{const r=await fetch("https://api.frankfurter.dev/v1/latest?base=EUR&symbols=CHF,USD");if(!r.ok)return;const j=await r.json();
+    if(j.rates&&j.rates.CHF&&j.rates.USD){RATES={CHF:j.rates.CHF,USD:j.rates.USD,date:j.date,at:Date.now()};lsSet(LSR,JSON.stringify(RATES));renderAll()}}catch(e){}}
+const eurToChf=v=>v*RATES.CHF, chfToCur=v=>ui.cur==="chf"?v:ui.cur==="eur"?v/RATES.CHF:v/RATES.CHF*RATES.USD;
+const asChf=(e,u)=>e?e*RATES.CHF:(u?u/RATES.USD*RATES.CHF:0);
+const pN=c=>ui.cur==="eur"?c.eur:ui.cur==="usd"?c.usd:asChf(c.eur,c.usd), pF=c=>ui.cur==="eur"?c.eurf:ui.cur==="usd"?c.usdf:asChf(c.eurf,c.usdf);
 const best=c=>c.fin==="f"?pF(c):(pN(c)||pF(c));
-const money=v=>{if(!v)return "—";const s=v>=1000?Math.round(v).toLocaleString("fr-CH"):v.toFixed(2);return (ui.cur==="eur"?"€ ":"$ ")+s};
+const SYM={chf:"CHF ",eur:"€ ",usd:"$ "};
+const fmt=(v,cur)=>{const s=Math.abs(v)>=1000?Math.round(v).toLocaleString("fr-CH"):v.toFixed(2);return SYM[cur]+s};
+const money=v=>v?fmt(v,ui.cur):"—";
+const chf=v=>fmt(v||0,"chf");
 const valueOf=k=>{const c=BYK[k];if(!c)return 0;const e=E(k);return e.n*(pN(c)||pF(c))+e.f*(pF(c)||pN(c))};
 function bandOf(c){const map={W:"var(--m-W)",U:"var(--m-U)",B:"var(--m-B)",R:"var(--m-R)",G:"var(--m-G)"};
   if(c.colors.length>1){const cs=c.colors.split("").map(x=>map[x]);return "linear-gradient(110deg,"+cs.map((x,i)=>x+" "+Math.round(i/cs.length*100)+"% "+Math.round((i+1)/cs.length*100)+"%").join(",")+")"}
@@ -364,7 +377,7 @@ function updateSync(){const d=dataAt?new Date(dataAt).toLocaleString("fr-CH",{da
 function renderSets(){const n=s=>CARDS.filter(c=>s==="all"||c.set===s).length;
   document.getElementById("sets").innerHTML=[["hob","The Hobbit"],["hoc","Commander (HOC)"],["all","Tout"]].map(([s,l])=>
     '<button class="chip" data-set="'+s+'" aria-pressed="'+(ui.set===s)+'">'+l+' <small>'+n(s)+'</small></button>').join("")+
-    '<button class="chip" id="lang" aria-label="Changer la langue des cartes" style="margin-left:auto">'+(ui.lang==="fr"?"🇫🇷 Français":"🇬🇧 English")+'</button><button class="chip" id="cur" aria-label="Changer la devise">'+(ui.cur==="eur"?"€ EUR":"$ USD")+'</button>'}
+    '<button class="chip" id="lang" aria-label="Changer la langue des cartes" style="margin-left:auto">'+(ui.lang==="fr"?"🇫🇷 Français":"🇬🇧 English")+'</button><button class="chip" id="cur" aria-label="Changer la devise">'+({chf:"CHF",eur:"€ EUR",usd:"$ USD"}[ui.cur])+'</button>'}
 const RCOL={c:"#6b7069",u:"#8d9ba6",r:"#c39a2c",m:"#d4602f"};
 function renderProgress(){const list=CARDS.filter(inSet),own=list.filter(c=>qty(c.k)>0),pct=list.length?own.length/list.length*100:0;let val=0;list.forEach(c=>val+=valueOf(c.k));
   const seg=["c","u","r","m"].map(r=>({r,n:own.filter(c=>c.r===r).length}));
@@ -416,6 +429,43 @@ function renderSheet(){if(!openK)return;const c=BYK[openK];if(!c){closeSheet();r
 function mutate(k,fn){if(viewing){toast("Classeur de "+viewing.pseudo+" : lecture seule");return}const e=Object.assign({n:0,f:0,t:0,w:false},coll[k]);fn(e);e.n=Math.max(0,e.n);e.f=Math.max(0,e.f);e.t=Math.max(0,Math.min(e.t,e.n+e.f));
   if(e.n||e.f||e.t||e.w)coll[k]=e;else delete coll[k];persist();renderAll()}
 
+/* ---------- Achats ---------- */
+const PRODUCTS=[["pb","Play Booster",1],["pbd","Boîte de 30 Play Boosters",30],["cb","Collector Booster",1],["cbd","Boîte de 12 Collector Boosters",12],
+  ["bun","Bundle",9],["gift","Gift Bundle",10],["scp","Scene Box · Crack the Plates",3],["sct","Scene Box · Treasures of Smaug",3],
+  ["draft","Draft Night",13],["pre","Prerelease Pack",6],["single","Cartes à l'unité",0],["other","Autre",0]];
+const PROD=Object.fromEntries(PRODUCTS.map(p=>[p[0],{name:p[1],packs:p[2]}]));
+const LSP="hobbitdex.purchases";let purchases=[];
+try{const p=JSON.parse(lsGet(LSP)||"[]");if(Array.isArray(p))purchases=cleanPurch(p)}catch(e){}
+function cleanPurch(a){return (Array.isArray(a)?a:[]).filter(x=>x&&PROD[x.p]).map(x=>({id:String(x.id||Math.random().toString(36).slice(2)),p:x.p,q:Math.max(1,Math.min(999,parseInt(x.q,10)||1)),u:Math.max(0,Math.round((+x.u||0)*100)/100),d:/^\d{4}-\d{2}-\d{2}$/.test(x.d)?x.d:new Date().toISOString().slice(0,10),note:String(x.note||"").slice(0,80)}))}
+function savePurch(){lsSet(LSP,JSON.stringify(purchases));if(typeof syncPurch==="function")syncPurch()}
+let delArm=null;
+function renderBuy(){const host=document.getElementById("view-buy");const today=new Date().toISOString().slice(0,10);
+  const spent=purchases.reduce((s,x)=>s+x.q*x.u,0),packs=purchases.reduce((s,x)=>s+x.q*PROD[x.p].packs,0);
+  let valEur=0;CARDS.forEach(c=>{const e=coll[c.k];if(e)valEur+=e.n*(asChf(c.eur,c.usd)||asChf(c.eurf,c.usdf))+e.f*(asChf(c.eurf,c.usdf)||asChf(c.eur,c.usd))});
+  const diff=valEur-spent;
+  const byProd=PRODUCTS.map(([k,n])=>{const l=purchases.filter(x=>x.p===k);return [n,l.reduce((s,x)=>s+x.q,0),l.reduce((s,x)=>s+x.q*x.u,0)]}).filter(x=>x[1]);
+  const rows=purchases.slice().sort((a,b)=>b.d.localeCompare(a.d)||0);
+  host.innerHTML='<h2 class="sec">Ce que j\'ai acheté</h2><div class="kpis">'+
+   '<div class="kpi"><small>Total dépensé</small><b>'+chf(spent)+'</b></div>'+
+   '<div class="kpi"><small>Valeur de ma collection</small><b>'+chf(valEur)+'</b></div>'+
+   '<div class="kpi"><small>'+(diff>=0?"Gain":"Perte")+' sur le papier</small><b style="color:'+(diff>=0?"var(--good)":"var(--wish)")+'">'+(diff>=0?"+":"−")+chf(Math.abs(diff)).replace("CHF ","CHF ")+'</b></div>'+
+   '<div class="kpi"><small>Boosters ouverts</small><b>'+packs+(packs?' <span class="n" style="font-size:13px">· '+chf(spent/packs)+' / booster</span>':"")+'</b></div></div>'+
+   '<div class="panels"><div class="panel"><h3>Ajouter un achat</h3><div class="form">'+
+   '<label>Produit<select id="bp-p">'+PRODUCTS.map(([k,n])=>'<option value="'+k+'">'+n+'</option>').join("")+'</select></label>'+
+   '<div class="form" style="grid-template-columns:1fr 1fr"><label>Quantité<input id="bp-q" type="number" inputmode="numeric" min="1" value="1"></label><label>Prix payé par pièce (CHF)<input id="bp-u" type="text" inputmode="decimal" autocomplete="off" placeholder="ex. 6.90"></label></div>'+
+   '<div class="form" style="grid-template-columns:1fr 1fr"><label>Date<input id="bp-d" type="date" value="'+today+'"></label><label>Note (magasin…)<input id="bp-n" maxlength="80" placeholder="facultatif"></label></div>'+
+   '</div><div class="actions"><button class="btn" id="bp-add">Ajouter</button></div><p class="note">La valeur de la collection est calculée en CHF à partir des prix Cardmarket (taux du '+RATES.date.split("-").reverse().join(".")+').</p></div>'+
+   '<div class="panel"><h3>Par produit</h3>'+(byProd.length?'<ul class="list">'+byProd.map(([n,q,t])=>'<li><span>'+esc(n)+' <span class="n">×'+q+'</span></span><span class="n">'+chf(t)+'</span></li>').join("")+'</ul>':'<p class="note">Aucun achat enregistré.</p>')+'</div>'+
+   '<div class="panel" style="grid-column:1/-1"><h3>Historique ('+rows.length+')</h3>'+(rows.length?'<ul class="list">'+rows.map(x=>'<li><span><b>'+esc(PROD[x.p].name)+'</b> <span class="n">×'+x.q+' · '+x.d.split("-").reverse().join(".")+(x.note?" · "+esc(x.note):"")+'</span></span><span style="display:flex;gap:10px;align-items:center"><span class="n">'+chf(x.q*x.u)+(x.q>1?' ('+chf(x.u)+' pce)':'')+'</span><button class="linkbtn" data-delp="'+x.id+'">'+(delArm===x.id?"Confirmer":"Supprimer")+'</button></span></li>').join("")+'</ul>':'<p class="note">Ajoute ton premier achat avec le formulaire.</p>')+'</div></div>'}
+function addPurchase(){const q=parseInt(document.getElementById("bp-q").value,10),u=parseFloat(String(document.getElementById("bp-u").value).replace(",","."));
+  if(!(q>=1)){toast("Indique une quantité");return}if(!(u>=0)){toast("Indique le prix payé");return}
+  purchases.push(...cleanPurch([{id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),p:document.getElementById("bp-p").value,q,u,d:document.getElementById("bp-d").value,note:document.getElementById("bp-n").value.trim()}]));
+  savePurch();renderBuy();toast("Achat ajouté")}
+document.addEventListener("click",ev=>{const t=ev.target;
+  if(t.closest("#bp-add")){addPurchase();return}
+  const dp=t.closest("[data-delp]");if(dp){const id=dp.dataset.delp;if(delArm!==id){delArm=id;renderBuy();setTimeout(()=>{if(delArm===id){delArm=null;if(ui.view==="buy")renderBuy()}},4000);return}
+    purchases=purchases.filter(x=>x.id!==id);delArm=null;savePurch();renderBuy();toast("Achat supprimé")}});
+
 /* ---------- Stats ---------- */
 function renderStats(){const host=document.getElementById("view-stats");let tot=0,copies=0,distinct=0,foils=0;
   CARDS.forEach(c=>{const e=E(c.k);tot+=valueOf(c.k);copies+=e.n+e.f;foils+=e.f;if(e.n+e.f)distinct++});
@@ -445,7 +495,7 @@ function copyText(t){if(navigator.clipboard&&navigator.clipboard.writeText)navig
 /* ---------- navigation ---------- */
 function showView(){document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.view===ui.view));
   document.querySelectorAll(".view").forEach(v=>v.hidden=v.id!=="view-"+ui.view);renderAll()}
-function renderAll(){document.body.classList.toggle("viewing",!!viewing);if(ui.view==="friends")renderFriends();
+function renderAll(){document.body.classList.toggle("viewing",!!viewing);if(ui.view==="friends")renderFriends();if(ui.view==="buy")renderBuy();
   if(ui.view==="dex"){const vb=document.getElementById("viewbar");vb.innerHTML=viewing?'<div class="viewbar"><span>Tu regardes le classeur de <b>'+esc(viewing.pseudo)+'</b> (lecture seule)</span><button class="btn" id="stop-view">Revenir à mon classeur</button></div>':"";renderSets();renderProgress();renderStatus();renderGrid()}
   if(ui.view==="stats")renderStats();if(ui.view==="trade")renderTrade();if(ui.view==="save"){document.getElementById("export").value=JSON.stringify(coll);updateSync()}renderSheet()}
 
@@ -453,7 +503,7 @@ document.addEventListener("click",ev=>{const t=ev.target;
   const tab=t.closest("nav.tabs button");if(tab){viewing=null;ui.view=tab.dataset.view;showView();return}
   const ch=t.closest("[data-set]");if(ch){ui.set=ch.dataset.set;saveUI();renderVarSelect();renderAll();return}
   if(t.closest("#lang")){ui.lang=ui.lang==="fr"?"en":"fr";saveUI();renderAll();return}
-  if(t.closest("#cur")){ui.cur=ui.cur==="eur"?"usd":"eur";saveUI();renderAll();return}
+  if(t.closest("#cur")){ui.cur={chf:"eur",eur:"usd",usd:"chf"}[ui.cur]||"chf";saveUI();renderAll();toast(ui.cur==="chf"?"Prix en CHF (Cardmarket converti, taux du "+RATES.date.split("-").reverse().join(".")+")":ui.cur==="eur"?"Prix en euros (Cardmarket)":"Prix en dollars (TCGplayer)");return}
   if(t.closest("#dens")){ui.big=!ui.big;saveUI();renderAll();return}
   const st=t.closest("[data-st]");if(st){ui.status=st.dataset.st;saveUI();renderAll();return}
   const q=t.closest("[data-quick]");if(q){const c=BYK[q.dataset.quick],m=q.dataset.m,e0=E(c.k),nm=short(N(c));
@@ -523,6 +573,8 @@ async function onUser(u){
     const [p,pv,c]=await Promise.all([S.fb.getDoc(D("profiles",u.uid)),S.fb.getDoc(D("private",u.uid)),S.fb.getDoc(D("collections",u.uid))]);
     S.profile=p.exists()?p.data():null;S.profileLoaded=true;
     S.friends=pv.exists()&&Array.isArray(pv.data().friends)?pv.data().friends:[];
+    {const rp=cleanPurch(pv.exists()?pv.data().purchases:[]);const ids=new Set(purchases.map(x=>x.id));const add=rp.filter(x=>!ids.has(x.id));
+     const needPush=purchases.some(x=>!rp.find(y=>y.id===x.id));purchases=[...purchases,...add];lsSet(LSP,JSON.stringify(purchases));if(needPush)syncPurch()}
     const remote=c.exists()?clean(c.data().cards):{};const rn=Object.keys(remote).length,ln=Object.keys(coll).length;
     if(!rn&&ln)pushNow();
     else if(rn&&!ln){coll=remote;lsSet(LS,JSON.stringify(coll))}
@@ -538,6 +590,8 @@ async function onUser(u){
 function sortObj(o){return Object.keys(o).sort().reduce((a,k)=>(a[k]=o[k],a),{})}
 function listsOf(c){const trade={},wish=[];for(const [k,e] of Object.entries(c)){if(e.t)trade[k]=e.t;if(e.w)wish.push(k)}return {trade,wish}}
 function syncChanged(){if(!S.user||S.merge)return;S.dirty=true;clearTimeout(S.timer);S.timer=setTimeout(pushNow,900);renderAcct()}
+let purchTimer=null;
+function syncPurch(){if(!S.user)return;clearTimeout(purchTimer);purchTimer=setTimeout(async()=>{try{await S.fb.setDoc(D("private",S.user.uid),{purchases},{merge:true})}catch(e){toast("Achats pas synchronisés (hors ligne ?)")}},800)}
 async function pushNow(){if(!S.user)return;S.dirty=false;
   try{const b=S.fb.writeBatch(S.db),now=S.fb.serverTimestamp();
     b.set(D("collections",S.user.uid),{cards:coll,updated:now});b.set(D("lists",S.user.uid),{...listsOf(coll),updated:now});await b.commit()}
@@ -580,11 +634,11 @@ async function addFriend(){const inp=document.getElementById("fr-add"),ps=inp.va
   if(!PSEUDO_RE.test(ps)){S.err="Écris le pseudo exact de ton ami.";renderAcct();return}
   try{const p=await S.fb.getDoc(D("pseudos",ps));if(!p.exists()){S.err="Aucun joueur avec ce pseudo.";renderAcct();return}
     const uid=p.data().uid;if(uid===S.user.uid){S.err="C'est ton propre pseudo.";renderAcct();return}
-    if(!S.friends.includes(uid)){S.friends=[...S.friends,uid];await S.fb.setDoc(D("private",S.user.uid),{friends:S.friends})}
+    if(!S.friends.includes(uid)){S.friends=[...S.friends,uid];await S.fb.setDoc(D("private",S.user.uid),{friends:S.friends},{merge:true})}
     inp.value="";await loadFriend(uid);S.open=uid;toast("Ami ajouté")}
   catch(e){S.err="Erreur : "+(e.code||e.message)}renderAcct()}
 async function removeFriend(uid){S.friends=S.friends.filter(x=>x!==uid);delete S.fdata[uid];if(S.open===uid)S.open=null;
-  try{await S.fb.setDoc(D("private",S.user.uid),{friends:S.friends})}catch(e){}renderAcct()}
+  try{await S.fb.setDoc(D("private",S.user.uid),{friends:S.friends},{merge:true})}catch(e){}renderAcct()}
 async function loadFriend(uid){const f={uid,profile:null,lists:null,cards:null};
   try{const p=await S.fb.getDoc(D("profiles",uid));f.profile=p.exists()?p.data():null}catch(e){}
   const sh=f.profile&&f.profile.share;
@@ -592,6 +646,7 @@ async function loadFriend(uid){const f={uid,profile:null,lists:null,cards:null};
   if(sh==="all"){try{const c=await S.fb.getDoc(D("collections",uid));f.cards=c.exists()?clean(c.data().cards):{}}catch(e){}}
   S.fdata[uid]=f}
 async function loadFriends(){await Promise.all(S.friends.map(loadFriend));renderAcct()}
+const byPrice=keys=>keys.slice().sort((a,b)=>best(BYK[b])-best(BYK[a]));
 function matchesOf(f){const L=f.lists||{trade:{},wish:[]},trade=L.trade||{},wish=L.wish||[];
   const theyHave=Object.keys(trade).filter(k=>BYK[k]);
   const forMyWish=theyHave.filter(k=>coll[k]&&coll[k].w);
@@ -635,9 +690,9 @@ function renderFriends(){const host=document.getElementById("view-friends");if(!
     const lst=(keys,right)=>keys.length?'<ul class="list">'+keys.map(k=>liHTML(BYK[k],right(k))).join("")+'</ul>':'<p class="note">Rien pour l\'instant.</p>';
     const ft=(f.lists&&f.lists.trade)||{};
     detail=p.share==="private"?'<div class="panel"><h3>'+esc(p.pseudo)+'</h3><p class="note">'+esc(p.pseudo)+' ne partage rien pour l\'instant.</p><div class="actions"><button class="btn ghost" data-unfriend="'+f.uid+'">Retirer de mes amis</button></div></div>':
-      '<div class="panel"><h3>'+esc(p.pseudo)+' propose et tu la cherches ('+m.forMyWish.length+')</h3>'+lst(m.forMyWish,k=>"×"+ft[k])+'</div>'+
-      '<div class="panel"><h3>'+esc(p.pseudo)+' cherche et tu la proposes ('+m.iCanGive.length+')</h3>'+lst(m.iCanGive,k=>"tu as ×"+coll[k].t)+'</div>'+
-      '<div class="panel"><h3>'+esc(p.pseudo)+' propose et tu ne l\'as pas ('+m.forMyMissing.length+')</h3>'+lst(m.forMyMissing,k=>"×"+ft[k])+'</div>'+
+      '<div class="panel"><h3>'+esc(p.pseudo)+' propose et tu la cherches ('+m.forMyWish.length+')</h3>'+lst(byPrice(m.forMyWish),k=>"×"+ft[k]+" · "+money(best(BYK[k])))+'</div>'+
+      '<div class="panel"><h3>'+esc(p.pseudo)+' cherche et tu la proposes ('+m.iCanGive.length+')</h3>'+lst(byPrice(m.iCanGive),k=>"tu as ×"+coll[k].t+" · "+money(best(BYK[k])))+'</div>'+
+      '<div class="panel"><h3>'+esc(p.pseudo)+' propose et tu ne l\'as pas ('+m.forMyMissing.length+')</h3>'+lst(byPrice(m.forMyMissing),k=>"×"+ft[k]+" · "+money(best(BYK[k])))+'</div>'+
       '<div class="panel"><h3>Tout ce que '+esc(p.pseudo)+' cherche ('+m.wish.length+')</h3>'+lst(m.wish,k=>money(best(BYK[k])))+
       '<div class="actions">'+(f.cards?'<button class="btn" data-view-friend="'+f.uid+'">Voir son classeur</button>':"")+'<button class="btn ghost" data-refresh-friend="'+f.uid+'">Actualiser</button><button class="btn ghost" data-unfriend="'+f.uid+'">Retirer de mes amis</button></div></div>'}
   host.innerHTML='<h2 class="sec">Amis</h2><div class="panels">'+mergeBox+
@@ -666,7 +721,7 @@ document.addEventListener("click",ev=>{const t=ev.target;
 document.addEventListener("change",ev=>{if(ev.target.id==="pf-share"&&S.profile)saveShare(ev.target.value)});
 document.addEventListener("keydown",ev=>{if(ev.key==="Enter"&&ev.target.id==="fr-add")addFriend();if(ev.key==="Enter"&&ev.target.id==="au-pass")loginEmail(false)});
 
-renderVarSelect();updateSync();showView();refreshData(false);renderAcct();fbInit();
+renderVarSelect();updateSync();showView();refreshData(false);refreshRates();renderAcct();fbInit();
 if("serviceWorker" in navigator&&location.protocol==="https:")navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script>
 </body>
