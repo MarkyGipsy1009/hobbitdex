@@ -185,7 +185,10 @@ body.viewing .qbar{display:none}
 .games{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
 .games button{border:1px solid rgb(255 255 255 / .35);background:transparent;color:var(--deep-ink);border-radius:999px;padding:6px 14px;font-weight:700;font-size:14px}
 .games button[aria-pressed="true"]{background:var(--deep-ink);color:var(--deep)}
-body.g-rb .top{background:var(--rb-deep)}
+body.g-rb{--bg:#e8edf7;--surface:#f6f8fd;--raised:#ffffff;--ink:#141b33;--muted:#56627e;--line:#cfd8ea;--accent:#2f6fd6;--accent-soft:#dbe6fb;--deep:#141b33;--deep-ink:#e8eefc}
+@media (prefers-color-scheme: dark){body.g-rb{--bg:#0c1222;--surface:#131b30;--raised:#18223b;--ink:#e3e9f7;--muted:#93a0bd;--line:#24304d;--accent:#6ea8ff;--accent-soft:#1c2c4f;--deep:#0a0f1e;--deep-ink:#e3e9f7}}
+body.g-rb .top{background:linear-gradient(135deg,#141b33,#1d3a7a)}
+body.g-rb .top::before{opacity:.08}
 :root{--rb-deep:#141b33;--d-Fury:#c8382f;--d-Calm:#3f8f5a;--d-Mind:#2f6fb3;--d-Body:#d9822b;--d-Chaos:#7d3fa6;--d-Order:#c9a227;--d-Colorless:#8b9097}
 .card.land img{object-fit:contain}
 .big-img.land{aspect-ratio:88/63}
@@ -568,7 +571,7 @@ function copyText(t){if(navigator.clipboard&&navigator.clipboard.writeText)navig
 function showView(){document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.view===ui.view));
   document.querySelectorAll(".view").forEach(v=>v.hidden=v.id!=="view-"+ui.view);renderAll()}
 function renderChrome(){const G=GAMES[ui.game];document.body.classList.toggle("g-rb",ui.game==="rb");document.getElementById("brand").textContent=G.brand;document.getElementById("runes").textContent=G.runes;document.getElementById("subline").textContent=G.sub;
-  document.getElementById("foot").innerHTML=G.foot;document.querySelectorAll("[data-game]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.game===ui.game));document.title=G.brand}
+  document.getElementById("foot").innerHTML=G.foot;document.querySelectorAll("[data-game]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.game===ui.game));document.title=G.brand;const tc=document.querySelector('meta[name="theme-color"]');if(tc)tc.content=ui.game==="rb"?"#141b33":"#1f3a2e"}
 function renderAll(){renderChrome();document.body.classList.toggle("viewing",!!viewing);if(ui.view==="friends")renderFriends();if(ui.view==="buy")renderBuy();
   if(ui.view==="dex"){const vb=document.getElementById("viewbar");vb.innerHTML=viewing?'<div class="viewbar"><span>Tu regardes le classeur de <b>'+esc(viewing.pseudo)+'</b> (lecture seule)</span><button class="btn" id="stop-view">Revenir à mon classeur</button></div>':"";renderSets();renderProgress();renderStatus();renderGrid()}
   if(ui.view==="stats")renderStats();if(ui.view==="trade")renderTrade();if(ui.view==="save"){document.getElementById("export").value=JSON.stringify(coll);updateSync()}renderSheet()}
