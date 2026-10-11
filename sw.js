@@ -1,5 +1,5 @@
 // HobbitDex — service worker : app et images disponibles hors connexion
-const SHELL = "hobbitdex-shell-v1";
+const SHELL = "hobbitdex-shell-v2";
 const IMAGES = "hobbitdex-images-v1";
 const DATA = "hobbitdex-data-v1";
 const SHELL_FILES = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
@@ -44,11 +44,12 @@ self.addEventListener("fetch", (e) => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
 
-  if (url.hostname === "cards.scryfall.io") { e.respondWith(cacheFirst(req, IMAGES)); return; }
+  if (url.hostname === "cards.scryfall.io" || url.hostname === "cmsassets.rgpub.io") { e.respondWith(cacheFirst(req, IMAGES)); return; }
   if (url.hostname === "fonts.googleapis.com" || url.hostname === "fonts.gstatic.com") { e.respondWith(cacheFirst(req, SHELL)); return; }
-  if (url.hostname === "api.scryfall.com") { e.respondWith(networkFirst(req, DATA)); return; }
+  if (url.hostname === "api.scryfall.com" || url.hostname === "api.riftcodex.com" || url.hostname === "api.frankfurter.dev") { e.respondWith(networkFirst(req, DATA)); return; }
   if (url.origin === self.location.origin) {
     // La page elle-même : réseau d'abord pour recevoir les mises à jour, cache si hors ligne
+    if (url.pathname.endsWith(".json")) { e.respondWith(networkFirst(req, DATA)); return; }
     if (req.mode === "navigate") { e.respondWith(networkFirst(req, SHELL).catch(() => caches.match("./index.html"))); return; }
     e.respondWith(cacheFirst(req, SHELL));
   }
