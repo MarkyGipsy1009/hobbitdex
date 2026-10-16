@@ -105,6 +105,9 @@ main{max-width:1180px;margin:0 auto;padding-inline:16px;padding-block:18px calc(
 .quick{width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-size:18px;line-height:1;display:grid;place-items:center;box-shadow:0 2px 6px rgb(0 0 0 / .2);padding:0}
 .quick.f{background:linear-gradient(135deg,#ffe7f6,#e2f6ff 50%,#fff6cf);color:#3b2a00}
 .quick.t{font-size:16px}
+.qrow{display:flex;align-items:center;justify-content:flex-end;gap:4px}
+.qn{min-width:22px;text-align:center;font-family:var(--f-mono);font-size:12px;font-weight:700;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:1px 6px;box-shadow:0 1px 4px rgb(0 0 0 / .2)}
+.qn.zero{opacity:.55;font-weight:400}
 @media (max-width:420px){.qbar{gap:4px}.quick{width:31px;height:31px;font-size:16px}}
 .quick:hover{border-color:var(--accent);filter:brightness(1.05)}
 .quick:active{transform:scale(.92)}
@@ -480,13 +483,15 @@ function filtered(){const q=ui.q.trim().toLowerCase();
   const s=ui.sort;l.sort((a,b)=>s==="price"?best(b)-best(a):s==="name"?N(a).localeCompare(N(b),"fr"):s==="owned"?(qty(b.k)>0)-(qty(a.k)>0)||a.set.localeCompare(b.set)||a.num-b.num:a.set.localeCompare(b.set)||a.num-b.num);
   return l}
 function tileHTML(c){const e=E(c.k),n=e.n+e.f;
+  // Compteur à côté de chaque bouton rapide, seulement pour les cartes possédées
+  const qn=(v,l)=>n?'<span class="qn'+(v?"":" zero")+'" title="'+v+' '+l+'">'+v+'</span>':"";
   const img=IS(c)?'<img loading="lazy" decoding="async" src="'+esc(ui.big?IM(c):IS(c))+'" srcset="'+esc(IS(c))+' 146w, '+esc(IM(c))+' 488w" sizes="'+(ui.big?"240px":"170px")+'" alt="'+esc(N(c))+'">':'<div class="ph">'+esc(short(N(c)))+'</div>';
   return '<div class="card'+(n?"":" missing")+(c.land?" land":"")+((c.v==="S"||c.v==="G"||e.f)?" foil":"")+'" role="button" tabindex="0" data-k="'+c.k+'" aria-label="'+esc(N(c))+', n° '+c.cn+(n?", "+n+" possédée(s)":", manquante")+'">'+
     '<div class="img" style="--band:'+bandOf(c)+'">'+img+'</div>'+
     (n?'<span class="owned-badge">×'+n+'</span>':"")+((e.w||e.t)?'<span class="flags">'+(e.w?'<span class="w">cherche</span>':"")+(e.t?'<span class="t">éch. '+e.t+'</span>':"")+'</span>':"")+
-    '<div class="qbar">'+(c.fin.includes("n")?'<button class="quick" data-quick="'+c.k+'" data-m="n" title="Ajouter une normale" aria-label="Ajouter une normale de '+esc(N(c))+'">+</button>':"")+
-      (c.fin.includes("f")?'<button class="quick f" data-quick="'+c.k+'" data-m="f" title="Ajouter une foil" aria-label="Ajouter une foil de '+esc(N(c))+'">✦</button>':"")+
-      '<button class="quick t" data-quick="'+c.k+'" data-m="t" title="Mettre une à échanger" aria-label="Mettre un exemplaire de '+esc(N(c))+' à échanger">⇄</button></div>'+
+    '<div class="qbar">'+(c.fin.includes("n")?'<div class="qrow">'+qn(e.n,"normale(s)")+'<button class="quick" data-quick="'+c.k+'" data-m="n" title="Ajouter une normale" aria-label="Ajouter une normale de '+esc(N(c))+'">+</button></div>':"")+
+      (c.fin.includes("f")?'<div class="qrow">'+qn(e.f,"foil")+'<button class="quick f" data-quick="'+c.k+'" data-m="f" title="Ajouter une foil" aria-label="Ajouter une foil de '+esc(N(c))+'">✦</button></div>':"")+
+      '<div class="qrow">'+qn(e.t,"à échanger")+'<button class="quick t" data-quick="'+c.k+'" data-m="t" title="Mettre une à échanger" aria-label="Mettre un exemplaire de '+esc(N(c))+' à échanger">⇄</button></div></div>'+
     '<div class="cap"><span class="no"><span class="gem '+c.r+'" title="'+RAR[c.r]+'"></span>'+(ui.set==="all"?c.set.toUpperCase()+" ":"")+c.cn.padStart(3,"0")+'</span>'+(c.v!=="N"?'<span class="nm" style="font-weight:500;color:var(--muted)">'+VAR[c.v]+'</span>':'<span class="nm"></span>')+'<span class="pr">'+money(best(c))+'</span></div></div>'}
 function renderGrid(){const l=filtered(),g=document.getElementById("grid");g.classList.toggle("big",ui.big);
   document.getElementById("count").textContent=l.length+" carte"+(l.length>1?"s":"")+" affichée"+(l.length>1?"s":"");
