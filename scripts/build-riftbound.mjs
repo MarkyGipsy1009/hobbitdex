@@ -26,8 +26,11 @@ async function main() {
     const g = price.get(p.idProduct) || {};
     return [p.idProduct, p.name, p.idExpansion, r2(g.trend ?? g.avg), r2(g["trend-foil"] ?? g["avg-foil"])];
   });
+  const priced = rows.filter((r) => r[3] || r[4]).length;
   if (rows.length < 500) throw new Error("Trop peu de produits reçus (" + rows.length + "), fichier non remplacé.");
+  // Guide des prix vide ou partiel : garder le fichier d'hier plutôt que des prix à 0
+  if (priced < 1000) throw new Error("Trop peu de prix reçus (" + priced + "), fichier non remplacé.");
   writeFileSync("riftbound-prices.json", JSON.stringify({ at: new Date().toISOString(), products: rows }));
-  console.log(`riftbound-prices.json : ${rows.length} produits, ${rows.filter((r) => r[3] || r[4]).length} avec prix`);
+  console.log(`riftbound-prices.json : ${rows.length} produits, ${priced} avec prix`);
 }
 main().catch((e) => { console.error(e); process.exit(1); });

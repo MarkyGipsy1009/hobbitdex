@@ -212,7 +212,7 @@ footer a{color:inherit}
 <body>
 <header class="top">
   <div class="wrap">
-    <button class="acct" id="acct" hidden>Se connecter</button>
+    <button class="acct" id="acct">Se connecter</button>
     <div class="brand"><h1 id="brand">HobbitDex</h1><span class="runes" id="runes">ᚦ ᛒ ᚨ ᛗ</span></div>
     <p class="sub" id="subline">Collection Magic: The Gathering · The Hobbit (HOB) et cartes Commander (HOC)</p>
     <div class="games" role="group" aria-label="Jeu"><button data-game="hob" aria-pressed="true">The Hobbit</button><button data-game="rb" aria-pressed="false">Riftbound</button></div>
@@ -253,7 +253,7 @@ footer a{color:inherit}
     <div class="panels">
       <div class="panel">
         <h3>Où est ta collection</h3>
-        <p style="margin:0">Ta collection est enregistrée dans ce navigateur, sur cet appareil. Pour la passer sur un autre appareil, copie l'export ici et colle-le dans « Importer » là-bas.</p>
+        <p style="margin:0">Ta collection est enregistrée dans ce navigateur. Avec un compte (bouton « Se connecter » en haut), elle est aussi synchronisée sur tous tes appareils. Sans compte, copie l'export ici et colle-le dans « Importer » sur l'autre appareil.</p>
         <p class="note" id="data-info"></p>
         <div class="actions"><button class="btn ghost" id="refresh">Mettre à jour cartes et prix</button></div>
       </div>
@@ -308,7 +308,7 @@ const FIREBASE_CONFIG={apiKey:"AIzaSyA5YvJBXoUmyAU8PkhxgkvWcAC2yJhGCnE",authDoma
 const SNAP_DATE="11.10.2026";
 const API_FR="https://api.scryfall.com/cards/search?q=(e%3Ahob+or+e%3Ahoc)+lang%3Afr&unique=prints&order=set&include_extras=true&include_variations=true";
 const API="https://api.scryfall.com/cards/search?q=(e%3Ahob+or+e%3Ahoc)&unique=prints&order=set&include_extras=true&include_variations=true";
-const LS="hobbitdex.v1", LSC="hobbitdex.cards.v2", LSU="hobbitdex.ui";
+const LS="hobbitdex.v1", LSC="hobbitdex.cards.v2", LSU="hobbitdex.ui", LSB="hobbitdex.synced", LSO="hobbitdex.owner";
 
 function lsGet(k){try{return localStorage.getItem(k)}catch(e){return null}}
 function lsSet(k,v){try{localStorage.setItem(k,v);return true}catch(e){return false}}
@@ -357,14 +357,14 @@ async function refreshData(force){
   updateSync();}
 
 /* ---------- Riftbound ---------- */
-const LSRB="hobbitdex.rb.v2";
+const LSRB="hobbitdex.rb.v2", RB_V=2; // RB_V : changer pour forcer un nouveau chargement sans perdre le cache hors ligne
 const rbImg=(u,w)=>u?u+(u.includes("?")?"&":"?")+"w="+w+"&fm=webp":"";
 function fromRB(x){const dom=x.dom||[];return {k:"rb:"+x.k,g:"rb",set:String(x.set).toLowerCase(),cn:String(x.cn),num:parseInt(x.cn,10)||0,r:x.r,v:x.v,fin:x.fin||"nf",
   eur:x.eur||0,eurf:x.eurf||0,usd:0,usdf:0,name:x.name,mana:"",cost:x.e,might:x.m,power:x.p,type:x.type+(x.sup?" · "+x.sup:""),colors:"",dom,
   cat:dom.length>1?"Multi":(dom[0]||"Colorless"),pt:"",text:x.text||"",img:rbImg(x.img,700),imgS:rbImg(x.img,260),artist:x.art||"",tags:x.tags||[],land:!!x.land,cm:x.cm||0,ax:!!x.ax}}
 function setRB(raw,src,at){RB=(raw||[]).map(fromRB);rbSrc=src;rbAt=at||0;rebuild()}
-(function bootRB(){try{const d=JSON.parse(lsGet(LSRB)||"null");if(d&&Array.isArray(d.cards)&&d.cards.length)setRB(d.cards,"cache",d.fetched||0)}catch(e){}})();
-// Format Riftcodex brut (secours si riftbound.json n'existe pas encore) → même forme que le fichier construit
+(function bootRB(){try{const d=JSON.parse(lsGet(LSRB)||"null");if(d&&Array.isArray(d.cards)&&d.cards.length)setRB(d.cards,"cache",d.v===RB_V?d.fetched||0:0)}catch(e){}})();
+// Format Riftcodex brut → forme compacte gardée en cache
 function rcToRaw(c){const m=c.name.match(/\(([^)]+)\)\s*$/);const VV={"":"N",Starter:"ST","Launch Exclusive":"LX","Alternate Art":"A",Metal:"M",Overnumbered:"O",Signature:"SG",Ultimate:"UL","GG EZ":"GZ"};const v=VV[m?m[1]:""]||"A";
   const RR={Common:"c",Uncommon:"u",Rare:"r",Epic:"e",Showcase:"s",Promo:"p"};const cl=c.classification||{},at=c.attributes||{};
   return {id:c.riftbound_id,k:c.riftbound_id+(v!=="N"?"~"+v.toLowerCase():""),set:c.set.set_id,cn:String(c.collector_number),name:c.name.replace(/\s*\([^)]*\)\s*$/,""),v,r:RR[cl.rarity]||"c",
@@ -378,25 +378,35 @@ const RB_EXP={OGN:[6286],OGS:[6289],SFD:[6399],UNL:[6491,6567],VEN:[6587,6588],P
 const RB_VORDER={N:0,ST:0,LX:1,A:2,M:3,O:4,SG:5,UL:6,GZ:6};
 const rbNorm=s=>s.toLowerCase().replace(/\s*\([^)]*\)\s*$/,"").replace(/ - /g,", ").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9, ']/g,"").replace(/\s+/g," ").trim();
 function buildRB(items,products){
-  const raws=items.map(c=>({rc:c,raw:rcToRaw(c)}));
+  // Riftcodex renvoie certaines cartes deux fois : garder une seule fiche, de préférence celle qui a un tcgplayer_id
+  // (le doublon perd parfois le nom du champion : « Rogue Assassin » pour « Akali - Rogue Assassin », on garde le plus long pour Cardmarket)
+  const one=new Map();for(const c of items){const raw=rcToRaw(c),o=one.get(raw.k);if(!o){one.set(raw.k,{rc:c,raw});continue}
+    const keep=!o.rc.tcgplayer_id&&c.tcgplayer_id?{rc:c,raw}:o,other=keep===o?{rc:c,raw}:o;
+    if(other.rc.name.length>keep.rc.name.length){keep.rc={...keep.rc,name:other.rc.name};keep.raw.name=other.raw.name}one.set(raw.k,keep)}
+  const raws=[...one.values()];
   if(products&&products.length){
     const idx=new Map();for(const p of products){const k=p[2]+"|"+rbNorm(p[1]);if(!idx.has(k))idx.set(k,[]);idx.get(k).push(p)}
     const tr=p=>p[3]||p[4]||0;const groups=new Map();
     for(const x of raws){const k=x.rc.set.set_id+"|"+rbNorm(x.rc.name);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(x)}
     const used=new Set();
     for(const [k,arr] of groups){const [set,nm]=k.split("|");let cand=[];for(const e of RB_EXP[set]||[])cand.push(...(idx.get(e+"|"+nm)||[]));
-      cand=cand.filter(p=>!used.has(p[0]));if(!cand.length)continue;cand.sort((a,b)=>tr(a)-tr(b));
+      cand=cand.filter(p=>!used.has(p[0]));if(!cand.length)continue;cand.sort((a,b)=>(tr(a)||1e9)-(tr(b)||1e9)); // produit sans prix en dernier, sinon la version normale reçoit 0
       const cs=arr.slice().sort((a,b)=>(RB_VORDER[a.raw.v]??2)-(RB_VORDER[b.raw.v]??2)||a.rc.collector_number-b.rc.collector_number);
       const exact=cand.length===cs.length;
       cs.forEach((x,i)=>{const p=cand[Math.min(i,cand.length-1)];if(cand.length>=cs.length)used.add(p[0]);
         x.raw.eur=p[3]||0;x.raw.eurf=p[4]||0;x.raw.cm=p[0];x.raw.ax=(!exact&&cs.length>1)?1:0;x.raw.fin=x.raw.eur&&x.raw.eurf?"nf":(x.raw.eurf&&!x.raw.eur?"f":"nf")})}}
-  const seen=new Set();return raws.map(({raw})=>{let k=raw.k;for(let n=2;seen.has(k);n++)k=raw.k+n;seen.add(k);raw.k=k;return raw})}
+  return raws.map(x=>x.raw)}
+// Anciennes clés de doublons (« …2 ») : reporter les exemplaires sur la fiche unique
+function foldRBDups(){let ch=false;
+  for(const k of Object.keys(coll)){const base=k.slice(0,-1);if(!k.startsWith("rb:")||BYK[k]||!/\d$/.test(k)||!BYK[base])continue;
+    const a=coll[k],b=coll[base]||{n:0,f:0,t:0,w:false};coll[base]={n:Math.min(999,b.n+a.n),f:Math.min(999,b.f+a.f),t:Math.min(999,b.t+a.t),w:a.w||b.w};delete coll[k];ch=true}
+  if(ch)persist()}
 async function refreshRB(force){
   if(!force&&rbSrc==="cache"&&Date.now()-rbAt<6*3600e3)return;
   try{const items=[];for(let page=1;;page++){const r=await fetch("https://api.riftcodex.com/cards?size=100&page="+page);if(!r.ok)throw new Error("HTTP "+r.status);const j=await r.json();items.push(...j.items);if(page>=j.pages)break;await new Promise(s=>setTimeout(s,80))}
     let P=null;for(const u of rbUrls()){try{const r=await fetch(u,{cache:"no-cache"});if(r.ok){const j=await r.json();if(j&&Array.isArray(j.products)&&j.products.length){P=j;break}}}catch(e){}}
     const cards=buildRB(items,P&&P.products);const fetched=Date.now();
-    setRB(cards,"cache",fetched);rbFileAt=P?P.at:"";rbHasPrices=!!P;lsSet(LSRB,JSON.stringify({cards,fetched,at:rbFileAt,src:P?"file":"live"}));
+    setRB(cards,"cache",fetched);foldRBDups();rbFileAt=P?P.at:"";rbHasPrices=!!P;lsSet(LSRB,JSON.stringify({v:RB_V,cards,fetched,at:rbFileAt,src:P?"file":"live"}));
     if(ui.game==="rb"){renderFilters();renderAll()}if(force)toast("Cartes Riftbound mises à jour")}
   catch(e){if(force||!RB.length)toast("Les cartes Riftbound ne se chargent pas (hors ligne ?)")}
   updateSync()}
@@ -534,7 +544,12 @@ function renderSheet(){if(!openK)return;const c=BYK[openK];if(!c){closeSheet();r
    '<a class="link" href="'+scry(c)+'" target="_blank" rel="noopener">'+(c.g==="rb"?"Chercher sur Cardmarket ↗":"Voir sur Scryfall ↗")+'</a></div></div></div></div>';
   const s=document.querySelector(".sheet");if(s){s.scrollTop=keep;if(fi>=0){const f=s.querySelectorAll("button,a")[fi];(f&&!f.disabled?f:s).focus({preventScroll:true})}}}
 function mutate(k,fn){if(viewing){toast("Classeur de "+viewing.pseudo+" : lecture seule");return}const e=Object.assign({n:0,f:0,t:0,w:false},coll[k]);fn(e);e.n=Math.max(0,e.n);e.f=Math.max(0,e.f);e.t=Math.max(0,Math.min(e.t,e.n+e.f));
-  if(e.n||e.f||e.t||e.w)coll[k]=e;else delete coll[k];persist();renderAll()}
+  if(e.n||e.f||e.t||e.w)coll[k]=e;else delete coll[k];persist();refreshTile(k)}
+// Redessiner seulement la vignette quand l'ordre et le filtre de la grille ne changent pas (sinon 1000+ vignettes à chaque « + »)
+function refreshTile(k){const g=document.getElementById("grid"),el=ui.view==="dex"&&g.querySelector('.card[data-k="'+CSS.escape(k)+'"]');
+  if(!el||ui.status!=="all"||ui.sort==="owned"){renderAll();return}
+  const a=document.activeElement,m=el.contains(a)&&a.dataset.m;el.outerHTML=tileHTML(BYK[k]);renderProgress();renderSheet();
+  if(m){const b=g.querySelector('[data-quick="'+CSS.escape(k)+'"][data-m="'+m+'"]');if(b)b.focus({preventScroll:true})}}
 
 /* ---------- Achats ---------- */
 const PRODUCTS=[["pb","Play Booster",1],["pbd","Boîte de 30 Play Boosters",30],["cb","Collector Booster",1],["cbd","Boîte de 12 Collector Boosters",12],
@@ -548,7 +563,17 @@ const PROD=Object.fromEntries([...PRODUCTS,...PRODUCTS_RB].map(p=>[p[0],{name:p[
 const LSP="hobbitdex.purchases";let allPurch=[];
 try{const p=JSON.parse(lsGet(LSP)||"[]");if(Array.isArray(p))allPurch=cleanPurch(p)}catch(e){}
 function cleanPurch(a){return (Array.isArray(a)?a:[]).filter(x=>x&&PROD[x.p]).map(x=>({id:String(x.id||Math.random().toString(36).slice(2)),p:x.p,q:Math.max(1,Math.min(999,parseInt(x.q,10)||1)),u:Math.max(0,Math.round((+x.u||0)*100)/100),c:x.c==="eur"?"eur":"chf",d:/^\d{4}-\d{2}-\d{2}$/.test(x.d)?x.d:new Date().toISOString().slice(0,10),note:String(x.note||"").slice(0,80)}))}
-function savePurch(){lsSet(LSP,JSON.stringify(allPurch));if(typeof syncPurch==="function")syncPurch()}
+// Ids des achats supprimés : sans eux, un autre appareil renverrait l'achat au compte
+const LSPD="hobbitdex.purchdel";let purchDel=[];
+try{const d=JSON.parse(lsGet(LSPD)||"[]");if(Array.isArray(d))purchDel=d.map(String)}catch(e){}
+// Réunit achats locaux et distants. Retourne 1 si le compte doit être mis à jour, 2 si cet appareil a reçu du nouveau (ou les deux).
+function mergePurch(d){const rp=cleanPurch(d.purchases),rd=Array.isArray(d.purchDel)?d.purchDel.map(String):[];
+  const del=new Set([...purchDel,...rd]),ids=new Set(allPurch.map(x=>x.id)),rids=new Set(rp.map(x=>x.id));
+  const push=allPurch.some(x=>!rids.has(x.id)&&!del.has(x.id))||purchDel.some(x=>!rd.includes(x));
+  const got=rp.some(x=>!ids.has(x.id)&&!del.has(x.id))||allPurch.some(x=>del.has(x.id));
+  allPurch=[...allPurch,...rp.filter(x=>!ids.has(x.id))].filter(x=>!del.has(x.id));purchDel=[...del];
+  lsSet(LSP,JSON.stringify(allPurch));lsSet(LSPD,JSON.stringify(purchDel));return (push?1:0)|(got?2:0)}
+function savePurch(){lsSet(LSP,JSON.stringify(allPurch));lsSet(LSPD,JSON.stringify(purchDel));if(typeof syncPurch==="function")syncPurch()}
 let delArm=null;
 let buyCur=(lsGet("hobbitdex.buycur")==="eur")?"eur":"chf", entryCur=(lsGet("hobbitdex.entrycur")==="eur")?"eur":"chf";
 const inBuy=(v,c)=>c===buyCur?v:(c==="eur"?v*RATES.CHF:v/RATES.CHF);
@@ -579,7 +604,7 @@ document.addEventListener("click",ev=>{const t=ev.target;
   if(t.closest("#bp-add")){addPurchase();return}
   const bc=t.closest("[data-buycur]");if(bc){buyCur=bc.dataset.buycur;lsSet("hobbitdex.buycur",buyCur);renderBuy();return}
   const dp=t.closest("[data-delp]");if(dp){const id=dp.dataset.delp;if(delArm!==id){delArm=id;renderBuy();setTimeout(()=>{if(delArm===id){delArm=null;if(ui.view==="buy")renderBuy()}},4000);return}
-    allPurch=allPurch.filter(x=>x.id!==id);delArm=null;savePurch();renderBuy();toast("Achat supprimé")}});
+    allPurch=allPurch.filter(x=>x.id!==id);purchDel.push(id);delArm=null;savePurch();renderBuy();toast("Achat supprimé")}});
 
 /* ---------- Stats ---------- */
 function renderStats(){const host=document.getElementById("view-stats");let tot=0,copies=0,distinct=0,foils=0;
@@ -657,6 +682,10 @@ addEventListener("popstate",()=>{const [v,k]=location.hash.slice(1).split("/"),k
   if(kk&&BYK[kk]){if(!openK)lastFocus=document.activeElement;openK=kk;renderSheet()}else if(openK)closeSheet()});
 let tx=null;document.addEventListener("touchstart",e=>{tx=openK&&e.target.closest(".sheet")?[e.touches[0].clientX,e.touches[0].clientY]:null},{passive:true});
 document.addEventListener("touchend",e=>{if(!tx)return;const p=e.changedTouches[0],dx=p.clientX-tx[0],dy=p.clientY-tx[1];tx=null;if(Math.abs(dx)>60&&Math.abs(dx)>2*Math.abs(dy))navSheet(dx<0?1:-1)},{passive:true});
+// Un autre onglet a écrit : reprendre sa version au lieu de l'écraser au prochain ajout
+addEventListener("storage",e=>{try{if(e.key===LS){coll=clean(JSON.parse(e.newValue||"{}"));renderAll()}
+  else if(e.key===LSP){allPurch=cleanPurch(JSON.parse(e.newValue||"[]"));renderAll()}
+  else if(e.key===LSPD){const d=JSON.parse(e.newValue||"[]");if(Array.isArray(d))purchDel=d.map(String)}}catch(err){}});
 addEventListener("scroll",()=>{document.getElementById("totop").hidden=scrollY<700},{passive:true});
 let qT;document.getElementById("q").addEventListener("input",e=>{clearTimeout(qT);qT=setTimeout(()=>{ui.q=e.target.value;renderGrid()},120)});
 document.getElementById("f-rar").addEventListener("change",e=>{ui.rar=e.target.value;renderGrid()});
@@ -687,11 +716,10 @@ document.getElementById("offline").addEventListener("click",async ev=>{const b=e
 
 /* ---------- Comptes & amis (Firebase) ---------- */
 const FB_V="10.12.2", FB="https://www.gstatic.com/firebasejs/"+FB_V+"/";
-const S={ready:false,fb:null,auth:null,db:null,user:null,profile:null,profileLoaded:false,friends:[],fdata:{},merge:null,unsub:null,dirty:false,timer:null,busy:false,authMode:"login",err:"",open:null};
+const S={ready:false,fb:null,auth:null,db:null,user:null,profile:null,profileLoaded:false,friends:[],fdata:{},merge:null,unsub:null,dirty:false,timer:null,err:"",open:null};
 let viewing=null; // {uid,pseudo,cards} quand on regarde le classeur d'un ami
 
 async function fbInit(){
-  if(!FIREBASE_CONFIG)return;
   try{
     const [app,auth,fs]=await Promise.all([import(FB+"firebase-app.js"),import(FB+"firebase-auth.js"),import(FB+"firebase-firestore.js")]);
     S.fb={...app,...auth,...fs};
@@ -705,33 +733,45 @@ async function onUser(u){
   if(S.unsub){S.unsub();S.unsub=null}
   S.user=u||null;S.profile=null;S.profileLoaded=false;S.friends=[];S.fdata={};S.merge=null;
   if(!u){renderAcct();renderAll();return}
+  // Données locales d'un autre compte (appareil partagé) : ne jamais les verser dans celui-ci
+  const owner=lsGet(LSO);if(owner&&owner!==u.uid){coll={};allPurch=[];purchDel=[];lsSet(LS,"{}");lsSet(LSP,"[]");lsSet(LSPD,"[]");lsSet(LSB,"")}
+  lsSet(LSO,u.uid);
   renderAcct();
   try{
     const [p,pv,c]=await Promise.all([S.fb.getDoc(D("profiles",u.uid)),S.fb.getDoc(D("private",u.uid)),S.fb.getDoc(D("collections",u.uid))]);
     S.profile=p.exists()?p.data():null;S.profileLoaded=true;
     S.friends=pv.exists()&&Array.isArray(pv.data().friends)?pv.data().friends:[];
-    {const rp=cleanPurch(pv.exists()?pv.data().purchases:[]);const ids=new Set(allPurch.map(x=>x.id));const add=rp.filter(x=>!ids.has(x.id));
-     const needPush=allPurch.some(x=>!rp.find(y=>y.id===x.id));allPurch=[...allPurch,...add];lsSet(LSP,JSON.stringify(allPurch));if(needPush)syncPurch()}
-    const remote=c.exists()?clean(c.data().cards):{};const rn=Object.keys(remote).length,ln=Object.keys(coll).length;
-    if(!rn&&ln)pushNow();
-    else if(rn&&!ln){coll=remote;lsSet(LS,JSON.stringify(coll))}
-    else if(rn&&ln&&JSON.stringify(sortObj(remote))!==JSON.stringify(sortObj(coll)))S.merge=remote;
+    if(mergePurch(pv.exists()?pv.data():{})&1)syncPurch();
+    const remote=c.exists()?clean(c.data().cards):{};
+    const plan=syncPlan(keyOf(coll),keyOf(remote),lsGet(LSB));
+    if(plan==="same")lsSet(LSB,keyOf(coll));
+    else if(plan==="push")pushNow();
+    else if(plan==="pull"){coll=remote;lsSet(LS,JSON.stringify(coll));lsSet(LSB,keyOf(coll))}
+    else{S.merge=remote;toast("Ta collection a changé ici et sur un autre appareil : choisis quoi garder dans « Mon compte ».")}
     S.unsub=S.fb.onSnapshot(D("collections",u.uid),snap=>{
       if(snap.metadata.hasPendingWrites||S.dirty||S.merge||!snap.exists())return;
-      const d=clean(snap.data().cards);if(JSON.stringify(sortObj(d))!==JSON.stringify(sortObj(coll))){coll=d;lsSet(LS,JSON.stringify(coll));renderAll()}
+      const d=clean(snap.data().cards);lsSet(LSB,keyOf(d));if(keyOf(d)!==keyOf(coll)){coll=d;lsSet(LS,JSON.stringify(coll));renderAll()}
     },()=>{});
     loadFriends();
   }catch(e){toast("Erreur de synchronisation : "+(e.code||e.message))}
   renderAcct();renderAll();
 }
 function sortObj(o){return Object.keys(o).sort().reduce((a,k)=>(a[k]=o[k],a),{})}
+const keyOf=o=>JSON.stringify(sortObj(o));
+// Au démarrage : base = dernière version synchronisée sur cet appareil. On ne demande que si les deux côtés ont changé.
+function syncPlan(L,R,B){if(L===R)return "same";if(L===B)return "pull";if(R===B)return "push";if(R==="{}")return "push";if(L==="{}")return "pull";return "ask"}
+console.assert(syncPlan('{"a":1}','{"a":2}','{"a":1}')==="pull"&&syncPlan('{"a":2}','{"a":1}','{"a":1}')==="push"&&syncPlan('{"a":2}','{"a":3}','{"a":1}')==="ask"&&
+  syncPlan("{}",'{"a":1}',null)==="pull"&&syncPlan('{"a":1}',"{}",null)==="push"&&syncPlan('{"a":1}',"{}",'{"a":1}')==="pull"&&syncPlan('{"a":1}','{"a":2}',null)==="ask","syncPlan");
 function listsOf(c){const trade={},wish=[];for(const [k,e] of Object.entries(c)){if(e.t)trade[k]=e.t;if(e.w)wish.push(k)}return {trade,wish}}
 function syncChanged(){if(!S.user||S.merge)return;S.dirty=true;clearTimeout(S.timer);S.timer=setTimeout(pushNow,900);renderAcct()}
 let purchTimer=null;
-function syncPurch(){if(!S.user)return;clearTimeout(purchTimer);purchTimer=setTimeout(async()=>{try{await S.fb.setDoc(D("private",S.user.uid),{purchases:allPurch},{merge:true})}catch(e){toast("Achats pas synchronisés (hors ligne ?)")}},800)}
-async function pushNow(){if(!S.user)return;S.dirty=false;
+// Lire puis écrire dans une transaction : un achat ajouté sur un autre appareil n'est pas écrasé
+function syncPurch(){if(!S.user)return;clearTimeout(purchTimer);purchTimer=setTimeout(async()=>{const ref=D("private",S.user.uid);
+  try{let add=false;await S.fb.runTransaction(S.db,async tx=>{const d=await tx.get(ref);add=mergePurch(d.exists()?d.data():{})&2;tx.set(ref,{purchases:allPurch,purchDel},{merge:true})});if(add&&ui.view==="buy")renderBuy()}
+  catch(e){toast("Achats pas synchronisés (hors ligne ?)");purchTimer=setTimeout(syncPurch,15000)}},800)}
+async function pushNow(){if(!S.user)return;S.dirty=false;const sent=coll;
   try{const b=S.fb.writeBatch(S.db),now=S.fb.serverTimestamp();
-    b.set(D("collections",S.user.uid),{cards:coll,updated:now});b.set(D("lists",S.user.uid),{...listsOf(coll),updated:now});await b.commit()}
+    b.set(D("collections",S.user.uid),{cards:sent,updated:now});b.set(D("lists",S.user.uid),{...listsOf(sent),updated:now});await b.commit();lsSet(LSB,keyOf(sent))}
   catch(e){S.dirty=true;toast("Pas synchronisé (hors ligne ?). Nouvel essai bientôt.");clearTimeout(S.timer);S.timer=setTimeout(pushNow,15000)}
   renderAcct()}
 function resolveMerge(how){const R=S.merge;S.merge=null;
@@ -779,7 +819,10 @@ async function removeFriend(uid){S.friends=S.friends.filter(x=>x!==uid);delete S
 async function loadFriend(uid){const f={uid,profile:null,lists:null,cards:null};
   try{const p=await S.fb.getDoc(D("profiles",uid));f.profile=p.exists()?p.data():null}catch(e){}
   const sh=f.profile&&f.profile.share;
-  if(sh==="trades"||sh==="all"){try{const l=await S.fb.getDoc(D("lists",uid));f.lists=l.exists()?l.data():{trade:{},wish:[]}}catch(e){}}
+  if(sh==="trades"||sh==="all"){try{const l=await S.fb.getDoc(D("lists",uid)),d=l.exists()?l.data():{};
+    // Écrit par l'ami : ne garder que des nombres et des clés connues, jamais du HTML
+    const trade={};for(const [k,v] of Object.entries(d.trade||{})){const n=parseInt(v,10);if(BYK[k]&&n>0)trade[k]=Math.min(n,999)}
+    f.lists={trade,wish:(Array.isArray(d.wish)?d.wish:[]).filter(k=>typeof k==="string"&&BYK[k])}}catch(e){}}
   if(sh==="all"){try{const c=await S.fb.getDoc(D("collections",uid));f.cards=c.exists()?clean(c.data().cards):{}}catch(e){}}
   S.fdata[uid]=f}
 async function loadFriends(){await Promise.all(S.friends.map(loadFriend));renderAcct()}
@@ -794,12 +837,11 @@ function matchesOf(f){const L=f.lists||{trade:{},wish:[]},trade=L.trade||{},wish
 /* -- affichage -- */
 const SHARE={private:"Rien (privé)",trades:"Mes échanges et souhaits",all:"Toute ma collection"};
 function renderAcct(){
-  const b=document.getElementById("acct");if(b){b.hidden=!FIREBASE_CONFIG;
-    b.textContent=S.user?(S.profile?S.profile.pseudo:"Mon compte")+(S.dirty?" · …":" · ✓"):"Se connecter";b.classList.toggle("on",!!S.user)}
+  const b=document.getElementById("acct");if(b){
+    b.textContent=S.user?(S.profile?S.profile.pseudo:"Mon compte")+(S.merge?" · ⚠":S.dirty?" · …":" · ✓"):"Se connecter";b.classList.toggle("on",!!S.user)}
   if(ui.view==="friends")renderFriends()}
 function renderFriends(){const host=document.getElementById("view-friends");if(!host)return;
   const err=S.err?'<p class="note" style="color:var(--wish)">'+esc(S.err)+'</p>':"";
-  if(!FIREBASE_CONFIG){host.innerHTML='<h2 class="sec">Amis</h2><div class="empty">Les comptes ne sont pas encore activés sur ce site.</div>';return}
   if(!S.ready){host.innerHTML='<h2 class="sec">Amis</h2><div class="empty">'+(S.err||"Chargement…")+'</div>';return}
   if(!S.user){host.innerHTML='<h2 class="sec">Mon compte</h2><div class="panels"><div class="panel"><h3>Se connecter</h3>'+
     '<p style="margin-top:0">Avec un compte, ta collection est synchronisée sur tous tes appareils et tu peux la partager avec tes amis.</p>'+
@@ -845,7 +887,7 @@ document.addEventListener("click",ev=>{const t=ev.target;
   if(t.closest("#au-login")){loginEmail(false);return}
   if(t.closest("#au-create")){loginEmail(true);return}
   if(t.closest("#au-reset")){resetPw();return}
-  if(t.closest("#au-out")){S.fb.signOut(S.auth);return}
+  if(t.closest("#au-out")){(async()=>{if(S.dirty){clearTimeout(S.timer);await pushNow()}S.fb.signOut(S.auth)})();return}
   if(t.closest("#pf-save")){saveProfile();return}
   if(t.closest("#fr-add-btn")){addFriend();return}
   const mg=t.closest("[data-merge]");if(mg){resolveMerge(mg.dataset.merge);return}
