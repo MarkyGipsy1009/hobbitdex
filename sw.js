@@ -13,16 +13,31 @@ self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(keys.filter((k) => !keep.includes(k)).map((k) => caches.delete(k))))
+      .then(() => trimImages())
       .then(() => self.clients.claim())
   );
 });
 
-async function cacheFirst(req, name) {
+const MAX_IMAGES = 4000;
+let puts = 0;
+
+// Garde les images les plus récentes : le cache ne doit pas grossir sans fin
+async function trimImages() {
+  const cache = await caches.open(IMAGES);
+  const keys = await cache.keys();
+  await Promise.all(keys.slice(0, Math.max(0, keys.length - MAX_IMAGES)).map((k) => cache.delete(k)));
+}
+
+async function cacheFirst(req, name, cors) {
   const cache = await caches.open(name);
   const hit = await cache.match(req);
   if (hit) return hit;
-  const res = await fetch(req);
-  if (res && (res.ok || res.type === "opaque")) cache.put(req, res.clone());
+  // Scryfall accepte CORS : une réponse lisible compte sa vraie taille, une réponse opaque compte ~7 Mo dans le quota de Chrome
+  const res = await fetch(cors ? new Request(req.url, { mode: "cors", credentials: "omit" }) : req);
+  if (res && (res.ok || res.type === "opaque")) {
+    cache.put(req, res.clone()).catch(() => {});
+    if (name === IMAGES && ++puts % 100 === 0) trimImages().catch(() => {});
+  }
   return res;
 }
 
@@ -44,7 +59,8 @@ self.addEventListener("fetch", (e) => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
 
-  if (url.hostname === "cards.scryfall.io" || url.hostname === "cmsassets.rgpub.io") { e.respondWith(cacheFirst(req, IMAGES)); return; }
+  if (url.hostname === "cards.scryfall.io") { e.respondWith(cacheFirst(req, IMAGES, true)); return; }
+  if (url.hostname === "cmsassets.rgpub.io") { e.respondWith(cacheFirst(req, IMAGES)); return; }
   if (url.hostname === "fonts.googleapis.com" || url.hostname === "fonts.gstatic.com" || url.hostname === "cdn.jsdelivr.net") { e.respondWith(cacheFirst(req, SHELL)); return; }
   if (url.hostname === "api.scryfall.com" || url.hostname === "api.riftcodex.com" || url.hostname === "api.frankfurter.dev") { e.respondWith(networkFirst(req, DATA)); return; }
   if (url.origin === self.location.origin) {
